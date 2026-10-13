@@ -42,7 +42,14 @@ fi
 
 dest="$lib/Remote Scripts/ROLI_for_Live"
 mkdir -p "$dest"
-cp "$src"/*.py "$dest"/
+# Some unzip tools leave the folder unreadable, which hides the files from the copy below.
+chmod u+rwx "$src" 2>/dev/null || true
+set -- "$src"/*.py
+if [ ! -f "$1" ]; then
+  echo "Can't read the script files in $src." >&2
+  exit 1
+fi
+cp "$@" "$dest"/
 
 echo
 echo "ROLI for Live installed to: $dest"

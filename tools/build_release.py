@@ -36,6 +36,13 @@ def main():
             files.append((os.path.join(SCRIPT_DIR, name), 'ROLI_for_Live/' + name, False))
 
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+        # Explicit folder entries: without them macOS's Archive Utility can create the folders
+        # without read permission, so the installer can't list the script files.
+        for folder in ('', 'ROLI_for_Live/'):
+            info = zipfile.ZipInfo('%s/%s' % (top, folder), date_time=(2026, 1, 1, 0, 0, 0))
+            info.create_system = 3
+            info.external_attr = (0o40755 << 16) | 0x10  # drwxr-xr-x, MS-DOS directory flag
+            z.writestr(info, b'')
         for src, arc, executable in files:
             data = open(src, 'rb').read()
             if arc.endswith(('.command', '.sh')):

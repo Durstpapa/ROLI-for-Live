@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.1
+
+Fixes the Mac installer.
+
+- **Mac:** after unzipping by double-click, the installer could stop with
+  "cp: …/ROLI_for_Live/*.py: No such file or directory". The zip now creates its folders with
+  normal permissions, and the installer fixes an unreadable folder before copying.
+- **Mac:** new one-line install, no download or security prompt needed. Paste into Terminal:
+  `curl -fsSL https://raw.githubusercontent.com/ehsuun/ROLI-for-Live/main/install.sh | sh`
+
 ## v0.1.0 (first preview)
 
 First public preview of ROLI for Live, a Live 12 MIDI Remote Script for ROLI keyboards.
@@ -31,7 +41,8 @@ Then, once, in Live's Settings → Tempo & MIDI, choose **ROLI for Live** as a C
 About the Mac installer: **Install on Mac.command** isn't signed by Apple, so macOS warns it
 "could not verify it is free of malware" and offers to move it to the Trash. It's safe but not
 needed; dragging the folder does the same. To use it anyway: click Done, then System Settings →
-Privacy & Security → Open Anyway. Or in Terminal run `sh ` followed by the path to `install.sh`.
+Privacy & Security → Open Anyway. Or open Terminal and run
+`sh ~/Downloads/ROLI-for-Live-v0.1.0/install.sh`.
 
 ### Known limits
 - Live scales the keyboard doesn't have built in (e.g. Phrygian Dominant, Hirajoshi) show

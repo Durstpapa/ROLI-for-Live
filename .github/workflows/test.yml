@@ -57,6 +57,15 @@ jobs:
         run: |
           cd /
           printf '\n' | sh "$(ls -d "$HOME"/Downloads/ROLI-for-Live-v*)/install.sh"
+      - name: Run the exact README Terminal command from the home folder in zsh
+        shell: zsh {0}
+        run: |
+          rm -rf "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live"
+          rm -f "$HOME/Library/Preferences/Ableton/Live 12.4.6/Library.cfg"
+          cd ~
+          version=$(python3 -c "import re;print(re.search(r\"__version__ = '([^']+)'\", open('$GITHUB_WORKSPACE/src/ROLI_for_Live/__init__.py').read()).group(1))")
+          printf '\n' | sh ~/Downloads/ROLI-for-Live-v$version/install.sh
+          test -f "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/roli_for_live.py"
       - name: One-line install (install.sh piped to sh, downloads the latest release)
         run: |
           home="$RUNNER_TEMP/piped-home"
@@ -64,6 +73,35 @@ jobs:
           cd "$RUNNER_TEMP"
           HOME="$home" sh < "$GITHUB_WORKSPACE/install.sh"
           test -f "$home/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/roli_for_live.py"
+
+  macos-archive-utility:
+    # Double-clicking a zip in Finder uses Archive Utility, which unzips differently from ditto.
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build release zip
+        run: python tools/build_release.py
+      - name: Unzip with Archive Utility and install
+        run: |
+          mkdir -p "$RUNNER_TEMP/dl" "$RUNNER_TEMP/home"
+          cp dist/ROLI-for-Live-v*.zip "$RUNNER_TEMP/dl/"
+          open -W -g -a "Archive Utility" "$RUNNER_TEMP"/dl/*.zip
+          ls -la "$RUNNER_TEMP"/dl/*/ "$RUNNER_TEMP"/dl/*/ROLI_for_Live/
+          cd ~
+          printf '\n' | HOME="$RUNNER_TEMP/home" sh "$(ls -d "$RUNNER_TEMP"/dl/ROLI-for-Live-v*/)install.sh"
+          test -f "$RUNNER_TEMP/home/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/roli_for_live.py"
+      - name: Show how Archive Utility unzips the published v0.1.0 zip (diagnostic)
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/old"
+          curl -fsSL -o "$RUNNER_TEMP/old/old.zip" https://github.com/ehsuun/ROLI-for-Live/releases/download/v0.1.0/ROLI-for-Live-v0.1.0.zip
+          open -W -g -a "Archive Utility" "$RUNNER_TEMP/old/old.zip"
+          ls -la "$RUNNER_TEMP"/old/*/ "$RUNNER_TEMP"/old/*/ROLI_for_Live/ || true
+          ls -ld "$RUNNER_TEMP"/old/*/ROLI_for_Live
 
   windows:
     runs-on: windows-latest
