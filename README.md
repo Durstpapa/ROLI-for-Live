@@ -11,7 +11,7 @@
   <img alt="Ableton Live 12" src="https://img.shields.io/badge/Ableton%20Live-12-ff9a3c">
   <img alt="ROLI Piano 49" src="https://img.shields.io/badge/ROLI%20Piano-49-ffd27a">
   <img alt="Windows tested" src="https://img.shields.io/badge/Windows-tested-3c9a5f">
-  <img alt="macOS untested" src="https://img.shields.io/badge/macOS-untested-8a8f9c">
+  <img alt="macOS tested" src="https://img.shields.io/badge/macOS-tested-3c9a5f">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
@@ -77,7 +77,7 @@ Then do the one-time setup in Live below.
    *Or* right-click `install.ps1` → **Run with PowerShell**; it finds your User Library for you.
 3. Connect the keyboard and start Live.
 
-#### macOS *(not tested yet)*
+#### macOS
 
 1. Quit Live. Download and unzip this repository.
 2. Copy `src/ROLI_for_Live` into `~/Music/Ableton/User Library/Remote Scripts/`.
@@ -103,7 +103,7 @@ pitch bend range to **48** to match the keyboard.
 | ROLI Piano 49, firmware 1.5.0 | ✅ Tested |
 | Ableton Live 12.4.6 Suite, Windows 11 | ✅ Tested |
 | Other Live 12 editions (Intro, Standard) | Expected to work, untested |
-| macOS | Untested |
+| macOS | ✅ Tested |
 | LUMI Keys | 🧪 Experimental, untested: lights only (scale, track color, playing notes); buttons and expression left alone. Select the script manually. |
 | Seaboard, other ROLI models | Not supported (the script stays idle) |
 | Without ROLI Connect / ROLI Hardware Driver running | Untested |
