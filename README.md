@@ -45,7 +45,14 @@ Quit Live, download **ROLI-for-Live-vX.Y.Z.zip** from the
 
 **Windows:** double-click **Install on Windows.cmd**.
 
-**Mac:** drag the folder in (no security prompts):
+**Mac:** paste this line into **Terminal** and press Return. It downloads the latest release
+and installs it, with no security prompts (you don't need the zip):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ehsuun/ROLI-for-Live/main/install.sh | sh
+```
+
+Or drag the folder in yourself:
 1. In Finder choose **Go → Go to Folder…**, enter `~/Music/Ableton/User Library/Remote Scripts`
    and press Return. If it doesn't exist, open `~/Music/Ableton/User Library` and create a
    folder named `Remote Scripts`.
@@ -56,7 +63,7 @@ Quit Live, download **ROLI-for-Live-vX.Y.Z.zip** from the
 > to the Trash. It's safe, but you don't need it: dragging the folder does the same thing. If
 > you prefer the installer, click **Done** (not Move to Trash), open **System Settings →
 > Privacy & Security**, click **Open Anyway** next to it and confirm. Or open Terminal and run
-> `sh ~/Downloads/ROLI-for-Live-v0.1.0/install.sh` (adjust the path if you unzipped it elsewhere).
+> `sh ~/Downloads/ROLI-for-Live-v0.1.1/install.sh` (adjust the path if you unzipped it elsewhere).
 
 Then do the one-time setup in Live below.
 

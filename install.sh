@@ -1,23 +1,33 @@
 #!/bin/sh
 # Installs ROLI for Live into the Ableton User Library (macOS).
 # Usage: sh install.sh ["/path/to/User Library"]
-# (In a release download, just double-click "Install on Mac.command".)
+#    or: curl -fsSL https://raw.githubusercontent.com/ehsuun/ROLI-for-Live/main/install.sh | sh
+# (In a release download you can also double-click "Install on Mac.command".)
 set -e
+REPO=ehsuun/ROLI-for-Live
 here=$(cd "$(dirname "$0")" && pwd)
 
 # Works from a git checkout (src/ROLI_for_Live) and from a release zip (ROLI_for_Live).
+# Run on its own (e.g. piped from curl), it downloads the latest release's source first.
 if [ -f "$here/ROLI_for_Live/__init__.py" ]; then
   src="$here/ROLI_for_Live"
 elif [ -f "$here/src/ROLI_for_Live/__init__.py" ]; then
   src="$here/src/ROLI_for_Live"
 else
-  echo "Can't find the ROLI_for_Live folder next to this installer." >&2
-  exit 1
+  tag=$(curl -fsSI "https://github.com/$REPO/releases/latest" | tr -d '\r' |
+    sed -n 's#^[Ll]ocation: .*/releases/tag/##p')
+  [ -n "$tag" ] || { echo "Couldn't find the latest ROLI for Live release." >&2; exit 1; }
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  echo "Downloading ROLI for Live $tag..."
+  curl -fsSL "https://github.com/$REPO/archive/refs/tags/$tag.tar.gz" | tar -xz -C "$tmp"
+  src=$(echo "$tmp"/*/src/ROLI_for_Live)
+  [ -f "$src/__init__.py" ] || { echo "The download didn't contain ROLI_for_Live." >&2; exit 1; }
 fi
 
 if pgrep -f "Ableton Live" >/dev/null 2>&1; then
   printf 'Ableton Live is running. Please quit Live first, then press Return to continue. '
-  read -r _
+  read -r _ < /dev/tty
 fi
 
 lib="$1"
@@ -32,7 +42,14 @@ fi
 
 dest="$lib/Remote Scripts/ROLI_for_Live"
 mkdir -p "$dest"
-cp "$src"/*.py "$dest"/
+# Some unzip tools leave the folder unreadable, which hides the files from the copy below.
+chmod u+rwx "$src" 2>/dev/null || true
+set -- "$src"/*.py
+if [ ! -f "$1" ]; then
+  echo "Can't read the script files in $src." >&2
+  exit 1
+fi
+cp "$@" "$dest"/
 
 echo
 echo "ROLI for Live installed to: $dest"

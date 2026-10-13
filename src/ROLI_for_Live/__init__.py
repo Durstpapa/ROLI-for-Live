@@ -5,7 +5,7 @@ from _Framework.Capabilities import (AUTO_LOAD_KEY, CONTROLLER_ID_KEY, NOTES_CC,
 
 from .roli_for_live import ROLIForLive
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 
 def get_capabilities():

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.1
+
+Fixes the Mac installer.
+
+- **Mac:** after unzipping by double-click, the installer could stop with
+  "cp: …/ROLI_for_Live/*.py: No such file or directory". The zip now creates its folders with
+  normal permissions, and the installer fixes an unreadable folder before copying.
+- **Mac:** new one-line install, no download or security prompt needed. Paste into Terminal:
+  `curl -fsSL https://raw.githubusercontent.com/ehsuun/ROLI-for-Live/main/install.sh | sh`
+
 ## v0.1.0 (first preview)
 
 First public preview of ROLI for Live, a Live 12 MIDI Remote Script for ROLI keyboards.
