@@ -57,6 +57,13 @@ jobs:
         run: |
           cd /
           printf '\n' | sh "$(ls -d "$HOME"/Downloads/ROLI-for-Live-v*)/install.sh"
+      - name: One-line install (install.sh piped to sh, downloads the latest release)
+        run: |
+          home="$RUNNER_TEMP/piped-home"
+          mkdir -p "$home"
+          cd "$RUNNER_TEMP"
+          HOME="$home" sh < "$GITHUB_WORKSPACE/install.sh"
+          test -f "$home/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/roli_for_live.py"
 
   windows:
     runs-on: windows-latest
