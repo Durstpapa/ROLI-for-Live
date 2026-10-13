@@ -1,0 +1,38 @@
+name: Release
+
+# Run from the Actions tab with a version like v0.1.0: runs the tests, builds the zip with
+# tools/build_release.py and publishes a GitHub release with that version's CHANGELOG notes.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag, e.g. v0.1.0 (must match __version__ and a CHANGELOG heading)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test
+        run: python tests/test_script.py
+      - name: Build zip
+        run: python tools/build_release.py
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v h="## $VERSION" 'index($0, h) == 1 {f = 1; next} /^## / {f = 0} f' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION" "dist/ROLI-for-Live-$VERSION.zip" --target "$GITHUB_SHA" \
+            --title "ROLI for Live $VERSION" --notes-file notes.md

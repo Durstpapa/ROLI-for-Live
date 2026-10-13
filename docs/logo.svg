@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160" width="480" height="160" role="img" aria-label="ROLI for Live">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14161f"/>
+      <stop offset="1" stop-color="#232838"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="480" height="160" rx="28" fill="url(#bg)"/>
+  <!-- seven white keys: a C major octave, root (C) brighter, scale keys tinted with a "track color" -->
+  <g transform="translate(28 30)">
+    <g stroke="#0d0f15" stroke-width="2">
+      <rect x="0"   y="0" width="26" height="100" rx="5" fill="#ffd27a" filter="url(#glow)"/>
+      <rect x="28"  y="0" width="26" height="100" rx="5" fill="#ff9a3c"/>
+      <rect x="56"  y="0" width="26" height="100" rx="5" fill="#ff9a3c"/>
+      <rect x="84"  y="0" width="26" height="100" rx="5" fill="#ff9a3c"/>
+      <rect x="112" y="0" width="26" height="100" rx="5" fill="#ffffff" filter="url(#glow)"/>
+      <rect x="140" y="0" width="26" height="100" rx="5" fill="#ff9a3c"/>
+      <rect x="168" y="0" width="26" height="100" rx="5" fill="#ff9a3c"/>
+    </g>
+    <g fill="#1b1e29" stroke="#0d0f15" stroke-width="2">
+      <rect x="18"  y="0" width="18" height="60" rx="4"/>
+      <rect x="46"  y="0" width="18" height="60" rx="4"/>
+      <rect x="102" y="0" width="18" height="60" rx="4"/>
+      <rect x="130" y="0" width="18" height="60" rx="4"/>
+      <rect x="158" y="0" width="18" height="60" rx="4"/>
+    </g>
+  </g>
+  <g font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" fill="#f4f5f8">
+    <text x="252" y="78" font-size="40" font-weight="800" letter-spacing="1">ROLI</text>
+    <text x="252" y="114" font-size="28" font-weight="500" fill="#ffb25c">for Live</text>
+  </g>
+</svg>
