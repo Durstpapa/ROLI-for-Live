@@ -36,16 +36,29 @@ nothing to add to your Live Sets.
 
 ## Install
 
-Takes a minute: run the installer, then pick it once in Live.
+Takes a minute: put one folder in place, then pick it once in Live.
 
 ### Easiest: download a release
 
-1. Quit Live. Download **ROLI-for-Live-vX.Y.Z.zip** from the
-   [Releases page](https://github.com/ehsuun/ROLI-for-Live/releases) and unzip it.
-2. Double-click **Install on Windows.cmd** or **Install on Mac.command**.
-   On Mac, the first time, macOS blocks it because it isn't code-signed. Right-click the file → **Open** → **Open**;
-   on macOS 15 or later, open **System Settings → Privacy & Security** and click **Open Anyway** instead.
-3. Do the one-time setup in Live below.
+Quit Live, download **ROLI-for-Live-vX.Y.Z.zip** from the
+[Releases page](https://github.com/ehsuun/ROLI-for-Live/releases) and unzip it. Then:
+
+**Windows:** double-click **Install on Windows.cmd**.
+
+**Mac:** drag the folder in (no security prompts):
+1. In Finder choose **Go → Go to Folder…**, enter `~/Music/Ableton/User Library/Remote Scripts`
+   and press Return. If it doesn't exist, open `~/Music/Ableton/User Library` and create a
+   folder named `Remote Scripts`.
+2. Drag the **ROLI_for_Live** folder from the unzipped download into it.
+
+> **Why not double-click on Mac?** The included **Install on Mac.command** isn't signed by
+> Apple, so macOS warns that it "could not verify it is free of malware" and offers to move it
+> to the Trash. It's safe, but you don't need it: dragging the folder does the same thing. If
+> you prefer the installer, click **Done** (not Move to Trash), open **System Settings →
+> Privacy & Security**, click **Open Anyway** next to it and confirm. Or in Terminal type
+> `sh ` (with a space), drag **install.sh** into the window and press Return.
+
+Then do the one-time setup in Live below.
 
 ### Manual install
 
