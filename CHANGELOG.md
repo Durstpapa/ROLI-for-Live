@@ -31,7 +31,8 @@ Then, once, in Live's Settings → Tempo & MIDI, choose **ROLI for Live** as a C
 About the Mac installer: **Install on Mac.command** isn't signed by Apple, so macOS warns it
 "could not verify it is free of malware" and offers to move it to the Trash. It's safe but not
 needed; dragging the folder does the same. To use it anyway: click Done, then System Settings →
-Privacy & Security → Open Anyway. Or in Terminal run `sh ` followed by the path to `install.sh`.
+Privacy & Security → Open Anyway. Or open Terminal and run
+`sh ~/Downloads/ROLI-for-Live-v0.1.0/install.sh`.
 
 ### Known limits
 - Live scales the keyboard doesn't have built in (e.g. Phrygian Dominant, Hirajoshi) show

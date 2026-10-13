@@ -55,8 +55,8 @@ Quit Live, download **ROLI-for-Live-vX.Y.Z.zip** from the
 > Apple, so macOS warns that it "could not verify it is free of malware" and offers to move it
 > to the Trash. It's safe, but you don't need it: dragging the folder does the same thing. If
 > you prefer the installer, click **Done** (not Move to Trash), open **System Settings →
-> Privacy & Security**, click **Open Anyway** next to it and confirm. Or in Terminal type
-> `sh ` (with a space), drag **install.sh** into the window and press Return.
+> Privacy & Security**, click **Open Anyway** next to it and confirm. Or open Terminal and run
+> `sh ~/Downloads/ROLI-for-Live-v0.1.0/install.sh` (adjust the path if you unzipped it elsewhere).
 
 Then do the one-time setup in Live below.
 

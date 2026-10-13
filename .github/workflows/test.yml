@@ -57,6 +57,15 @@ jobs:
         run: |
           cd /
           printf '\n' | sh "$(ls -d "$HOME"/Downloads/ROLI-for-Live-v*)/install.sh"
+      - name: Run the exact README Terminal command from the home folder in zsh
+        shell: zsh {0}
+        run: |
+          rm -rf "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live"
+          rm -f "$HOME/Library/Preferences/Ableton/Live 12.4.6/Library.cfg"
+          cd ~
+          version=$(python3 -c "import re;print(re.search(r\"__version__ = '([^']+)'\", open('$GITHUB_WORKSPACE/src/ROLI_for_Live/__init__.py').read()).group(1))")
+          printf '\n' | sh ~/Downloads/ROLI-for-Live-v$version/install.sh
+          test -f "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/roli_for_live.py"
 
   windows:
     runs-on: windows-latest
