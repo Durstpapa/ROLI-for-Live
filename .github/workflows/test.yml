@@ -1,0 +1,80 @@
+name: Test
+
+# Runs the simulated Live test and the real installers from a freshly built release zip on
+# macOS and Windows.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Simulated Live test
+        run: python tests/test_script.py
+      - name: Build release zip
+        run: python tools/build_release.py
+      - name: Unzip like Finder does
+        run: |
+          mkdir -p "$HOME/Downloads"
+          ditto -x -k dist/ROLI-for-Live-v*.zip "$HOME/Downloads"
+          ls -l "$HOME"/Downloads/ROLI-for-Live-v*/
+          test -x "$HOME"/Downloads/ROLI-for-Live-v*/"Install on Mac.command"
+      - name: Install with no Live preferences (default User Library)
+        run: |
+          cd "$HOME"/Downloads/ROLI-for-Live-v*/
+          printf '\n' | "./Install on Mac.command"
+          ls -l "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live"
+          test -f "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/__init__.py"
+          test -f "$HOME/Music/Ableton/User Library/Remote Scripts/ROLI_for_Live/roli_for_live.py"
+      - name: Install with a moved User Library read from Live's Library.cfg
+        run: |
+          prefs="$HOME/Library/Preferences/Ableton/Live 12.4.6"
+          mkdir -p "$prefs"
+          cat > "$prefs/Library.cfg" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Ableton MajorVersion="5" MinorVersion="12.0_12402">
+          	<ContentLibrary>
+          		<UserLibrary>
+          			<LibraryProject Id="0">
+          				<ProjectLocation />
+          				<ProjectName Value="User Library" />
+          				<ProjectPath Value="$HOME/Music/Moved Library" />
+          			</LibraryProject>
+          		</UserLibrary>
+          	</ContentLibrary>
+          </Ableton>
+          EOF
+          cd "$HOME"/Downloads/ROLI-for-Live-v*/
+          printf '\n' | sh install.sh
+          test -f "$HOME/Music/Moved Library/User Library/Remote Scripts/ROLI_for_Live/__init__.py"
+      - name: Run installer via a dragged-in absolute path from another folder
+        run: |
+          cd /
+          printf '\n' | sh "$(ls -d "$HOME"/Downloads/ROLI-for-Live-v*)/install.sh"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Simulated Live test
+        run: python tests/test_script.py
+      - name: Build release zip and run the double-click installer
+        shell: pwsh
+        run: |
+          python tools/build_release.py
+          $zip = Get-ChildItem dist\ROLI-for-Live-v*.zip | Select-Object -First 1
+          Expand-Archive $zip.FullName -DestinationPath "$env:USERPROFILE\Downloads" -Force
+          $dir = Get-ChildItem "$env:USERPROFILE\Downloads\ROLI-for-Live-v*" -Directory | Select-Object -First 1
+          "`n" | cmd /c "`"$($dir.FullName)\Install on Windows.cmd`""
+          $dest = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Ableton\User Library\Remote Scripts\ROLI_for_Live'
+          Get-ChildItem $dest
+          if (-not (Test-Path (Join-Path $dest 'roli_for_live.py'))) { throw 'not installed' }
