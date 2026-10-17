@@ -7,8 +7,14 @@
 
 **Current fork hardware scope (2026-10-17):** describe this as **ROLI for Live — ROLI Piano
 integration**, not a general ROLI controller integration. Piano 49 is hardware-tested.
-Piano M is the renamed LUMI Keys, not a separate hardware target. Its existing LUMI Keys
-profile is experimental and has not been hardware-tested. Lightpad and Seaboard integration is
+Piano M is the renamed LUMI Keys, not a separate hardware target. On 2026-10-17 the user
+connected a LUMI Keys unit and reported that everything worked on macOS / Live 12.4.15b7.
+Live's log confirms recognition through the existing `LKB` profile and accepted brightness
+adjustments. The user also confirmed correct connection-status detection when powering
+the LUMI off and on. The runtime profile retains its experimental label; lighting/state
+restoration after reconnect, script-shutdown restoration and recovery scenarios were
+not separately qualified. Firmware was
+not recorded, and a newer Piano M-branded unit was not separately tested. Lightpad and Seaboard integration is
 out of scope; a Lightpad used for bend/modulation must be configured separately through
 normal MIDI routing, not assigned as this control surface's Piano port. Existing script,
 device and repository names remain unchanged for installation compatibility. The original
@@ -47,7 +53,7 @@ The first release provides **Push-like scale and color guidance on a piano keybo
 | Area | First-release decision |
 |---|---|
 | Primary hardware target | ROLI Piano, 49 keys. Confirm the actual test unit before implementation. The owner's model has not been confirmed. |
-| Additional hardware | Piano M (formerly LUMI Keys) uses the existing experimental LUMI Keys profile; qualify it with its own hardware tests before advertising tested support. Never infer support from the shared brand or protocol family. |
+| Additional hardware | Piano M (formerly LUMI Keys) uses the existing LUMI Keys profile, user-confirmed on a LUMI Keys unit on 2026-10-17. This does not qualify every firmware, hardware revision or recovery scenario. Never infer support for other controllers from the shared brand or protocol family. |
 | Connection | One keyboard over USB. No Bluetooth, chained keyboards, Airwave, or DIN-only lighting control in version 1. |
 | Host | Exact tested Live 12 builds. Target Standard and Suite without Max for Live; certify other editions only after testing. A beta is not required. |
 | Operating systems | macOS and Windows, with exact OS versions and architectures listed in the release matrix. No blanket compatibility claims. |
@@ -124,6 +130,13 @@ Before implementation, capture expected snapshots for: track-only selection, a s
 The following policy is the project's specification. Semantic resemblance to Push is the goal; identical perceived RGB output across different LED hardware is not promised.
 
 **Fork lighting levels (2026-10-16):** Add saved Global brightness and Background intensity controls. Global uses native config item 36, initially reads the hardware without overriding it, remains active with Scale lighting off, and restores captured brightness at script shutdown. Background scales background/root RGB channels only while Scale lighting is on; the user confirmed useful contrast at 25% with native playback highlights. A separate velocity-64 feedback test produced no perceptible highlight dimming, so do not expose an independent played-note brightness control. The wider native device retains the original button stack. Native slider parameter engines must stay enabled, with Hidden visibility and initialization disabled; validate 0/100 readback before enabling controls. After that correction, the user confirmed both brightness sliders work on Piano 49 / Live 12.4.15b7. Automated tests additionally cover migration, acknowledgement and restoration; not every recovery path has been separately hardware-qualified.
+
+**Slider reset policy (2026-10-17):** Double-click targets are Global Brightness 100%
+and Background Brightness 25%, selected by the user. Store these as native parameter
+initial values while keeping initialization disabled: loading the device must still
+read saved script settings, not apply reset values. Fresh-install preferences are
+unchanged. Generated-device tests assert both targets; the user confirmed native
+double-click resets work in Live on the connected LUMI Keys (2026-10-17).
 
 | State | Required display |
 |---|---|

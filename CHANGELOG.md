@@ -2,9 +2,19 @@
 
 ## Unreleased (fork)
 
+- Set native slider double-click reset values to Global Brightness 100% and Background
+  Brightness 25%, keeping initialization disabled so loading the device does not
+  overwrite saved preferences. Add generated-device regression assertions.
+  User confirmed both double-click resets work in Live with LUMI Keys (2026-10-17).
+- Record a successful user test on LUMI Keys / Piano M with macOS and Live 12.4.15b7
+  (2026-10-17). Live recognized the existing `LKB` profile and accepted brightness
+  adjustments; the user reported everything working and separately confirmed correct
+  connection-status detection when powering the LUMI off and on. Firmware, lighting/state
+  restoration after reconnect, script-shutdown restoration, recovery scenarios and a
+  newer Piano M-branded unit were not separately qualified.
 - Clarify the product as a ROLI Piano integration, not a general ROLI controller script.
-  Distinguish tested Piano 49 support from experimental, hardware-untested Piano M
-  (formerly LUMI Keys) support; document separate Lightpad routing and exclude Lightpad/Seaboard
+  Distinguish tested Piano 49 support from the LUMI Keys / Piano M lighting profile;
+  document separate Lightpad routing and exclude Lightpad/Seaboard
   integration without renaming installed components.
 - Keep native slider parameter engines enabled (Hidden visibility, no initialization)
   so their numeric ranges work. Validate native 0/100 readback before enabling controls,

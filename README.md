@@ -24,8 +24,8 @@ nothing to add to your Live Sets for the core integration. The optional **ROLI C
 device uses Max for Live to adjust and save the lighting preferences.
 
 **Hardware scope:** tested on **ROLI Piano 49**, not a general integration for all ROLI
-controllers. **Piano M (formerly LUMI Keys)** has an experimental profile that has not
-yet been hardware-tested. **Lightpad and Seaboard are not supported by this
+controllers. **Piano M (formerly LUMI Keys)** also has a lighting profile, now
+user-confirmed on a LUMI Keys unit. **Lightpad and Seaboard are not supported by this
 integration.** See the [compatibility matrix](#compatibility).
 
 > Independent community project. Not affiliated with or endorsed by ROLI or Ableton.
@@ -193,6 +193,11 @@ playback-flag correction and a Live restart. Other paths have automated simulate
 coverage; Session clip-scale following has not yet been separately hardware-qualified.
 
 ### Balancing brightness
+
+Double-click **Global Brightness** to reset it to **100%**, or **Background Brightness**
+to reset it to **25%**. These are explicit user actions and save the chosen reset value.
+Loading the device does not apply these reset values or replace your saved preferences.
+The fresh-install background default remains 100%.
 
 1. Turn **Scale lighting ON** and **Playing notes ON**, then play a MIDI clip with notes.
 2. Try **Background Brightness 25%** as a starting point. This dims background and root
@@ -412,13 +417,21 @@ This confirms the baseline, not rollback from a custom program (none was uploade
 | | Status |
 |---|---|
 | ROLI Piano 49, firmware 1.5.0 | ✅ Tested |
-| ROLI Piano M (formerly LUMI Keys) | 🧪 Experimental, untested: existing LUMI Keys profile; lights only (scale, track color, playing notes); buttons and expression left alone. Select the script manually. |
+| ROLI Piano M (formerly LUMI Keys) | ✅ User-confirmed on a LUMI Keys unit with macOS / Live 12.4.15b7 (2026-10-17). Uses the existing lighting profile; buttons and expression configuration left alone. Select the script manually. |
 | Ableton Live 12.4.6 Suite, Windows 11 | ✅ Original core integration tested; not evidence for the newer fork controls or clip-scale API. |
 | Ableton Live 12.4.15b7, macOS, Piano 49 | ✅ Fork controls, persistence, disconnection detection, empty Arrangement clip-scale transitions and both brightness sliders user-confirmed. |
 | Other Live 12 editions (Intro, Standard) | Core integration expected to work, untested. Optional controls require an edition with Max for Live support. |
 | macOS with Live 12 | ✅ Tested (user-confirmed) |
 | Lightpad, Seaboard, other ROLI models | Not supported (unrecognized device identities leave the script idle) |
 | Without ROLI Connect / ROLI Hardware Driver running | Untested |
+
+The LUMI Keys test used the existing `LKB` profile (still labeled experimental in
+runtime diagnostics). The user reported that everything worked; Live's log confirms
+recognition and accepted brightness adjustments. The user also confirmed correct
+connection-status detection when powering the LUMI off and on. Lighting/state restoration
+after reconnect, script-shutdown restoration and recovery scenarios were not separately
+qualified on this unit.
+Its firmware was not recorded, and a newer Piano M-branded unit was not separately tested.
 
 ### Using a Lightpad alongside the Piano
 

@@ -81,6 +81,8 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
         assert.equal(slider.saved_attribute_attributes.valueof.parameter_type, 1);
         assert.equal(slider.saved_attribute_attributes.valueof.parameter_mmin, 0);
         assert.equal(slider.saved_attribute_attributes.valueof.parameter_mmax, 100);
+        assert.deepEqual(slider.saved_attribute_attributes.valueof.parameter_initial,
+            [index === 0 ? 100 : 25], "native double-click resets to the chosen brightness");
         assert.equal(slider.saved_attribute_attributes.valueof.parameter_initial_enable, 0);
         assert.equal(slider.saved_attribute_attributes.valueof.parameter_invisible, 2);
         assert.ok(slider.presentation_rect[2] >= 24 && slider.presentation_rect[3] >= 24);

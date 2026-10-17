@@ -58,13 +58,13 @@ export async function build() {
     });
 
     const levels = [
-        ["global_brightness", "Global\nBrightness (%)",
-            "Global LED brightness, including playback highlights. Works with Scale lighting on or off. Saved only when changed; script shutdown restores the captured hardware brightness."],
-        ["background_intensity", "Background\nBrightness (%)",
-            "Background and root RGB intensity relative to playback highlights. Used when Scale lighting is on. This is an RGB percentage, not calibrated perceptual brightness."]
+        ["global_brightness", "Global\nBrightness (%)", 100,
+            "Global LED brightness, including playback highlights. Double-click resets to 100%. Works with Scale lighting on or off. Saved only when changed; script shutdown restores the captured hardware brightness."],
+        ["background_intensity", "Background\nBrightness (%)", 25,
+            "Background and root RGB intensity relative to playback highlights. Double-click resets to 25%. Used when Scale lighting is on. This is an RGB percentage, not calibrated perceptual brightness."]
     ];
     sliders.forEach((slider, index) => {
-        const [name, label, annotation] = levels[index];
+        const [name, label, resetValue, annotation] = levels[index];
         const y = 6 + index * 76;
         slider.varname = name;
         slider.parameter_enable = 1;
@@ -80,6 +80,7 @@ export async function build() {
             valueof: {
                 parameter_longname: name, parameter_shortname: label.replace("\n", " "),
                 parameter_type: 1, parameter_mmin: 0, parameter_mmax: 100,
+                parameter_initial: [resetValue],
                 parameter_initial_enable: 0, parameter_invisible: 2
             },
             slidercolor: { expression: "themecolor.live_control_fg" },
