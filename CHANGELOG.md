@@ -9,6 +9,9 @@
 - Order controls as Scale lighting, Key colors, Root color, Playing notes. Expire
   keyboard readiness after roughly five seconds without real replies, probe liveness,
   and reinitialize lighting after reconnection without resetting saved choices.
+- Add isolated, opt-in temporary-lighting recovery probe with pinned ROLI/JUCE build
+  dependencies and real Littlefoot VM tests. Green pulse remains offline-only pending
+  Piano restoration verification; no installed integration changes.
 - Add independent saved **Root color** control. Off makes roots match other lit keys
   in both color modes, without darkening or disabling them. Existing three-setting
   preference files migrate without resetting their values.

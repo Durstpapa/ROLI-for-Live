@@ -211,6 +211,62 @@ quitting and reopening Live (2026-10-16). The user subsequently confirmed the fo
 Root color control and visible clip-playback highlighting on the Piano. The white
 playback highlight can be subtle against white base keys.
 
+### Temporary custom-lighting experiment
+
+Selectable green playback highlights are **not implemented in the installed device**.
+The isolated [lighting experiment](experiments/lighting/) first tests restoration of
+the Piano's saved default program, before trying custom colors. It does not modify the
+installed Remote Script, Max device, or Dropbox preferences.
+
+Build and test offline (CMake 3.22+, Ninja, C++17 compiler, internet access):
+
+```sh
+cmake -S experiments/lighting -B dist/lighting-probe -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build dist/lighting-probe --parallel 2
+ctest --test-dir dist/lighting-probe --output-on-failure
+```
+
+Dependencies are pinned official ROLI BLOCKS SDK (ISC) and JUCE 7.0.12
+([GPLv3/commercial licensing](https://github.com/juce-framework/JUCE/tree/7.0.12)).
+The local executable is a development tool, not part of releases.
+The real Littlefoot compiler/VM tests check native touch remains enabled, only the
+intended green pixel is painted, and painting stops at the three-second watchdog.
+They cannot establish actual Piano firmware behavior.
+
+**Hardware testing requires explicit approval and Live closed.** The tool refuses
+to run with Live open. Use an exact Piano 49 serial; the snapshot path must be new
+and outside the repository. Close other ROLI-control apps to avoid competing owners.
+
+```sh
+dist/lighting-probe/roli_lighting_probe --test-restore RP4_SERIAL /absolute/path/to/snapshot.json
+```
+
+This reads and saves configuration before upload, loads a **temporary native-handler
+program**, waits five seconds after upload acknowledgment, requests the saved default
+program, and compares configuration readback. It never saves a program as default,
+performs a factory reset, or sends performance notes. On errors or interruption it
+attempts to restore the default; delivery cannot be guaranteed after a disconnect/crash.
+A separate recovery command uploads nothing:
+
+```sh
+dist/lighting-probe/roli_lighting_probe --restore-default RP4_SERIAL
+```
+
+Readback alone cannot prove recovery. Confirm normal lighting, octave controls, notes,
+bend/pressure and navigation after reopening Live before proceeding. The green-pulse
+program is offline-only until this recovery path is hardware-verified. Recovery is
+documented by the SDK but not yet established on this Piano; do not promise a guaranteed
+rollback or treat a factory reset as routine recovery.
+
+**Hardware attempt (2026-10-16): blocked before upload.** SDK discovery found the Piano
+with the ROLI Hardware Driver temporarily paused, but factory configuration sync ended
+without any item values. The safety gate refused upload; no temporary or green program
+was sent. A saved-default restore command was sent as a precaution, but an empty sync
+cannot verify its effect. The driver service was restarted. Reliable explicit
+configuration reads are needed before continuing; do not bypass the snapshot gate.
+After reopening Live, the user confirmed the existing setup still behaved normally.
+This confirms the baseline, not rollback from a custom program (none was uploaded).
+
 ## Compatibility
 
 | | Status |

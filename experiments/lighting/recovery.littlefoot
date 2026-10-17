@@ -1,0 +1,8 @@
+void initialise()
+{
+    setUseDefaultKeyHandler (true, true);
+}
+
+void repaint()
+{
+}

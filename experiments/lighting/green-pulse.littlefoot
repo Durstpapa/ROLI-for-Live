@@ -1,0 +1,24 @@
+int started;
+bool finished;
+
+void initialise()
+{
+    started = getMillisecondCounter();
+    finished = false;
+    setUseDefaultKeyHandler (true, false);
+}
+
+void repaint()
+{
+    if (finished)
+        return;
+
+    if (getMillisecondCounter() - started >= 3000)
+    {
+        setUseDefaultKeyHandler (true, true);
+        finished = true;
+        return;
+    }
+
+    fillPixel (0xff4fc532, 24, 0);
+}
