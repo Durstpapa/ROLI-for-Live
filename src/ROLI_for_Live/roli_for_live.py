@@ -13,7 +13,7 @@ import time
 from _Framework.ControlSurface import ControlSurface
 
 from . import blocks
-from .playing_notes import PlayingNotes
+from .playing_notes import PlayingNotes, playing_clip
 from .scales import BUILTIN_SCALES, CHROMATIC, builtin_index
 
 # BLOCKS config item ids (roli_BlockConfigId.h)
@@ -65,7 +65,8 @@ MIN_WRITE_INTERVAL_TICKS = 2
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device_snapshot.json')
 SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
-DEFAULT_SETTINGS = dict(white_keys=True, scale_lighting=True, playing_notes=True, root_color=True)
+DEFAULT_SETTINGS = dict(white_keys=True, scale_lighting=True, playing_notes=True, root_color=True,
+                        clip_scale=False)
 
 
 def _argb(rgb):
@@ -112,6 +113,8 @@ class ROLIForLive(ControlSurface):
             self._last_response = None
             self._track = None
             self._unsupported_scale_reported = None
+            self._scale_source_status = 'live'
+            self._clip_scale_error = None
             self._settings_error = False
             self._settings = self._load_settings()
             self._playing = PlayingNotes(self._send_midi, self.log_message)
@@ -141,6 +144,13 @@ class ROLIForLive(ControlSurface):
             int(self._settings['playing_notes']), int(self._settings['root_color']),
             int(ready), int(not self._settings_error))
 
+    def get_roli_controls_state_v4(self):
+        return 'roli_controls_v4 %d %d %d %d %d %d %d %s' % (
+            int(self._settings['white_keys']), int(self._settings['scale_lighting']),
+            int(self._settings['playing_notes']), int(self._settings['root_color']),
+            int(self._settings['clip_scale']), int(self._keyboard_ready()),
+            int(not self._settings_error), self._scale_source_status)
+
     def _keyboard_ready(self):
         return (self._serial is not None and self._snapshot is not None and self._mode is not None
                 and self._last_response is not None
@@ -161,6 +171,10 @@ class ROLIForLive(ControlSurface):
     def set_roli_root_color(self, value):
         self._set_setting('root_color', value)
         return self.get_roli_controls_state_v3()
+
+    def set_roli_clip_scale(self, value):
+        self._set_setting('clip_scale', value)
+        return self.get_roli_controls_state_v4()
 
     def _set_setting(self, name, value):
         if type(value) is not int or value not in (0, 1):
@@ -186,9 +200,11 @@ class ROLIForLive(ControlSurface):
             with open(SETTINGS_PATH) as file:
                 stored = json.load(file)
             if (not isinstance(stored, dict) or type(stored.get('version')) is not int
-                    or stored['version'] not in (1, 2)):
+                    or stored['version'] not in (1, 2, 3)):
                 raise ValueError('Invalid settings schema or version')
             fields = set(DEFAULT_SETTINGS)
+            if stored['version'] < 3:
+                fields.remove('clip_scale')
             if stored['version'] == 1:
                 fields.remove('root_color')
             if (set(stored) != fields | {'version'}
@@ -209,7 +225,7 @@ class ROLIForLive(ControlSurface):
             fd, temporary = tempfile.mkstemp(prefix='.roli-settings-', suffix='.tmp',
                                              dir=os.path.dirname(SETTINGS_PATH))
             with os.fdopen(fd, 'w') as file:
-                json.dump(dict(settings, version=2), file, sort_keys=True)
+                json.dump(dict(settings, version=3), file, sort_keys=True)
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(temporary, SETTINGS_PATH)
@@ -273,6 +289,8 @@ class ROLIForLive(ControlSurface):
             self.log_message('ROLI for Live: keyboard stopped responding; waiting for reconnection')
             self._reset_device_state()
         self._playing.update(self.song())
+        if self._settings['clip_scale']:
+            self._update_lighting()
         if self._serial is None:
             if self._ticks - self._last_probe >= PROBE_INTERVAL_TICKS:
                 self._last_probe = self._ticks
@@ -446,21 +464,52 @@ class ROLIForLive(ControlSurface):
 
     # ---------------------------------------------------------------- lighting
 
+    def _scale_state(self):
+        song = self.song()
+        state = (int(getattr(song, 'root_note', 0)) % 12,
+                 bool(getattr(song, 'scale_mode', True)),
+                 tuple(getattr(song, 'scale_intervals', [0, 2, 4, 5, 7, 9, 11])),
+                 getattr(song, 'scale_name', '?'))
+        self._scale_source_status = 'live'
+        error = None
+        if self._settings['clip_scale']:
+            try:
+                clip = playing_clip(song, self._track)
+                if clip is None:
+                    self._scale_source_status = 'idle'
+                else:
+                    root, enabled = clip.root_note, clip.scale_mode
+                    intervals, name = tuple(clip.scale_intervals), clip.scale_name
+                    if (type(root) is not int or not 0 <= root < 12 or not intervals
+                            or any(type(i) is not int or not 0 <= i < 12 for i in intervals)):
+                        raise ValueError('invalid clip root or scale intervals')
+                    state = (root, bool(enabled), intervals, name)
+                    self._scale_source_status = 'clip'
+            except AttributeError as exc:
+                self._scale_source_status = 'unsupported'
+                error = ('clip scale unavailable; requires clip-scale API support '
+                         '(Live 12.4.15b1 or newer): %s; using Live scale' % exc)
+            except (RuntimeError, IndexError, TypeError, ValueError) as exc:
+                self._scale_source_status = 'error'
+                error = 'could not read playing clip scale: %s; using Live scale' % exc
+        if error is not None and error != self._clip_scale_error:
+            self.log_message('ROLI for Live: %s' % error)
+            self.show_message('ROLI for Live: %s' % error)
+        self._clip_scale_error = error
+        return state
+
     def _update_lighting(self):
         if self._serial is None or self._snapshot is None or self._mode is None:
             return
         if not self._settings['scale_lighting']:
+            self._scale_source_status = 'off'
             for item, value in self._snapshot.items():
                 self._write(item, value)
             return
-        song = self.song()
-        root = int(getattr(song, 'root_note', 0)) % 12
-        scale_on = bool(getattr(song, 'scale_mode', True))
-        intervals = list(getattr(song, 'scale_intervals', [0, 2, 4, 5, 7, 9, 11]))
+        root, scale_on, intervals, name = self._scale_state()
         index = builtin_index(intervals)
         if index is None:
             index = CHROMATIC
-            name = getattr(song, 'scale_name', '?')
             if self._unsupported_scale_reported != name:
                 self._unsupported_scale_reported = name
                 self.show_message('ROLI for Live: "%s" is not one of the keyboard\'s built-in scales; '
@@ -494,6 +543,11 @@ class ROLIForLive(ControlSurface):
         # observed property gets its own function.
         return lambda: self._update_lighting()
 
+    def _on_playback_changed(self):
+        self._playing.update(self.song())
+        if self._settings['clip_scale']:
+            self._update_lighting()
+
     def _add_song_listeners(self):
         song = self.song()
         self._listeners = [(song.view, 'selected_track', self._on_track_selected)]
@@ -502,7 +556,7 @@ class ROLIForLive(ControlSurface):
                 self._listeners.append((song, prop, self._make_callback()))
         for prop in ('current_song_time', 'is_playing'):
             if hasattr(song, 'add_%s_listener' % prop):
-                self._listeners.append((song, prop, lambda: self._playing.update(self.song())))
+                self._listeners.append((song, prop, lambda: self._on_playback_changed()))
         for obj, prop, cb in self._listeners:
             getattr(obj, 'add_%s_listener' % prop)(cb)
 

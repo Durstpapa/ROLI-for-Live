@@ -14,7 +14,7 @@ export async function build() {
     const midiIn = boxes.find(box => box.text === "midiin");
     const midiOut = boxes.find(box => box.text === "midiout");
     const controls = boxes.filter(box => box.maxclass === "live.text");
-    if (!script || !midiIn || !midiOut || controls.length !== 4) {
+    if (!script || !midiIn || !midiOut || controls.length !== 5) {
         throw new Error("Unexpected js2max template; cannot safely wire controls");
     }
     p.boxes = p.boxes.filter(({ box }) => box.maxclass !== "comment");
@@ -23,13 +23,14 @@ export async function build() {
     p.lines = p.lines.filter(({ patchline }) =>
         patchline.source[0] !== midiIn.id && patchline.destination[0] !== midiOut.id);
     p.lines.push({ patchline: { source: [midiIn.id, 0], destination: [midiOut.id, 0] } });
-    const names = ["white_keys", "scale_lighting", "playing_notes", "root_color"];
-    const presentationOrder = ["scale_lighting", "white_keys", "root_color", "playing_notes"];
+    const names = ["white_keys", "scale_lighting", "playing_notes", "root_color", "clip_scale"];
+    const presentationOrder = ["scale_lighting", "white_keys", "root_color", "playing_notes", "clip_scale"];
     const annotations = [
         "White keys with track-colored roots, or track-colored keys with brighter roots. Used when Scale lighting is on.",
         "Off restores the keyboard's captured pre-script lighting settings. Navigation and MPE remain active.",
         "Controls Live's note feedback and playing-clip highlighting, not the Piano's native touch/pressure lighting.",
-        "Off makes root keys match the other lit keys, without changing notes or scale membership. Used when Scale lighting is on."
+        "Off makes root keys match the other lit keys, without changing notes or scale membership. Used when Scale lighting is on.",
+        "On follows the selected track's playing MIDI clip scale without selecting it. Off follows Live's global scale. Falls back to Live when no clip plays or clip-scale API is unavailable. Requires Live 12.4.15b1 or newer. Used when Scale lighting is on."
     ];
     controls.forEach((control, index) => {
         p.lines.push({ patchline: { source: [script.id, index], destination: [control.id, 0] } });
@@ -40,7 +41,7 @@ export async function build() {
         control.parameter_enable = 0;
         control.active = 0;
         control.annotation = annotations[index];
-        control.presentation_rect = [8, 6 + presentationOrder.indexOf(control.varname) * 27, 124, 24];
+        control.presentation_rect = [8, 6 + presentationOrder.indexOf(control.varname) * 25, 124, 24];
         control.fontsize = 11;
         control.fontface = 0;
         control.rounded = 2;
@@ -60,14 +61,14 @@ export async function build() {
     p.boxes.push({ box: {
         id: statusId, maxclass: "comment", numinlets: 1, numoutlets: 0,
         text: "Waiting for Live API...",
-        patching_rect: [10, 530, 124, 46],
-        presentation: 1, presentation_rect: [8, 118, 124, 46],
-        fontsize: 10, linecount: 4,
+        patching_rect: [10, 530, 124, 36],
+        presentation: 1, presentation_rect: [8, 133, 124, 36],
+        fontsize: 10, linecount: 3,
         saved_attribute_attributes: {
             textcolor: { expression: "themecolor.live_control_fg" }
         }
     } });
-    p.lines.push({ patchline: { source: [script.id, 4], destination: [statusId, 0] } });
+    p.lines.push({ patchline: { source: [script.id, 5], destination: [statusId, 0] } });
     p.default_fontsize = 11;
     p.saved_attribute_attributes = {
         bgcolor: { expression: "themecolor.live_surface_bg" },

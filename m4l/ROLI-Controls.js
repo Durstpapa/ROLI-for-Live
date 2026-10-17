@@ -3,15 +3,17 @@
 // @ui live.text "Scale lighting" trigger inlet=2
 // @ui live.text "Playing notes" trigger inlet=3
 // @ui live.text "Root color" trigger inlet=4
-inlets = 5;
-outlets = 5;
+// @ui live.text "Clip scale" trigger inlet=5
+inlets = 6;
+outlets = 6;
 
 var surface = null;
 var pollTask = null;
 var lastError = "";
 
 function status(text) {
-    outlet(4, "set", text);
+    outlet(5, "set", text);
+    outlet(5, "annotation", text);
 }
 
 function buttonText(index, text) {
@@ -20,7 +22,7 @@ function buttonText(index, text) {
 }
 
 function disableControls() {
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < 5; i++) {
         outlet(i, "active", 0);
     }
 }
@@ -34,15 +36,16 @@ function reportError(text) {
 }
 
 function readState(api) {
-    var reply = api.call("get_roli_controls_state_v3");
+    var reply = api.call("get_roli_controls_state_v4");
     var text = Array.isArray(reply) ? reply.join(" ") : String(reply);
-    var match = /^roli_controls_v3 ([01]) ([01]) ([01]) ([01]) ([01]) ([01])$/.exec(text);
+    var match = /^roli_controls_v4 ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) (live|clip|idle|unsupported|error|off)$/.exec(text);
     if (!match) {
         throw new Error("Update ROLI script: unexpected reply " + text);
     }
     return {
         white: Number(match[1]), scale: Number(match[2]), notes: Number(match[3]),
-        root: Number(match[4]), ready: match[5] === "1", settingsOk: match[6] === "1"
+        root: Number(match[4]), clip: Number(match[5]), ready: match[6] === "1",
+        settingsOk: match[7] === "1", source: match[8]
     };
 }
 
@@ -56,7 +59,7 @@ function findSurface() {
         }
         var candidate = new LiveAPI(null, "id " + ids[++i]);
         if (candidate.type === "ROLIForLive" ||
-                String(candidate.info).indexOf("get_roli_controls_state_v3") !== -1) {
+                String(candidate.info).indexOf("get_roli_controls_state_v4") !== -1) {
             matches.push(candidate);
         }
     }
@@ -75,15 +78,29 @@ function refresh() {
         buttonText(1, state.scale ? "Scale lighting: ON" : "Scale lighting: OFF");
         buttonText(2, state.notes ? "Playing notes: ON" : "Playing notes: OFF");
         buttonText(3, state.root ? "Root color: ON" : "Root color: OFF");
+        buttonText(4, state.clip ? "Clip scale: ON" : "Clip scale: OFF");
         outlet(0, "active", state.scale);
         outlet(1, "active", 1);
         outlet(2, "active", 1);
         outlet(3, "active", state.scale);
+        outlet(4, "active", state.scale);
         if (!state.settingsOk) {
             reportError("Settings file error.\nSee Live log.");
+        } else if (state.ready && state.scale && state.source === "unsupported") {
+            reportError("Connected\nClip scale unavailable\nUsing Live scale");
+        } else if (state.ready && state.scale && state.source === "error") {
+            reportError("Connected\nClip scale read error\nUsing Live scale");
         } else {
-            status(state.ready ? (state.scale ? "Connected" : "Connected\nROLI lighting restored") :
-                "Disconnected");
+            var text = "Disconnected";
+            if (state.ready) {
+                text = "Connected";
+                if (!state.scale) {
+                    text += "\nROLI lighting restored";
+                } else if (state.clip) {
+                    text += state.source === "clip" ? "\nPlaying clip scale" : "\nLive scale (no clip)";
+                }
+            }
+            status(text);
             lastError = "";
         }
     } catch (error) {
@@ -95,7 +112,7 @@ function refresh() {
 }
 
 function bang() {
-    if (inlet >= 1 && inlet <= 4) {
+    if (inlet >= 1 && inlet <= 5) {
         toggleSetting(inlet - 1);
         return;
     }
@@ -110,9 +127,9 @@ function bang() {
 }
 
 function toggleSetting(index) {
-    var fields = ["white", "scale", "notes", "root"];
+    var fields = ["white", "scale", "notes", "root", "clip"];
     var methods = ["set_roli_white_keys", "set_roli_scale_lighting", "set_roli_playing_notes",
-        "set_roli_root_color"];
+        "set_roli_root_color", "set_roli_clip_scale"];
     try {
         // Rediscover before writes: a removed/reordered surface must never receive a stale command.
         surface = findSurface();

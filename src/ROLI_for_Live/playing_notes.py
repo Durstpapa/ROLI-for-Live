@@ -34,6 +34,28 @@ def _arrangement_position(clip, song_time):
     return pos
 
 
+def playing_clip(song, track):
+    """Find the selected track's sounding MIDI clip without changing Live's selection."""
+    if (track is None or not getattr(song, 'is_playing', False)
+            or not getattr(track, 'has_midi_input', False)):
+        return None
+    index = track.playing_slot_index
+    if index is not None and index >= 0:
+        clip = track.clip_slots[index].clip
+        if (clip is not None and getattr(clip, 'is_playing', True)
+                and not getattr(clip, 'muted', False)):
+            return clip
+        return None
+    # -2 is a Session stop override: the Arrangement underneath is not sounding.
+    if index == -2 or getattr(track, 'back_to_arranger', False):
+        return None
+    t = float(song.current_song_time)
+    for clip in getattr(track, 'arrangement_clips', ()):
+        if clip.start_time <= t < clip.end_time and not getattr(clip, 'muted', False):
+            return clip
+    return None
+
+
 class PlayingNotes(object):
 
     def __init__(self, send_midi, log):
@@ -84,21 +106,13 @@ class PlayingNotes(object):
 
     def _playing_clip(self, song):
         """Return (clip, position in clip beats) for the selected track, or (None, None)."""
-        track = self._track
-        if track is None or not getattr(song, 'is_playing', False):
-            return None, None
         try:
-            if not getattr(track, 'has_midi_input', False):
-                return None, None
-            index = track.playing_slot_index
-            if index is not None and index >= 0:
-                clip = track.clip_slots[index].clip
-                if clip is not None:
+            clip = playing_clip(song, self._track)
+            if clip is not None:
+                index = self._track.playing_slot_index
+                if index is not None and index >= 0:
                     return clip, float(clip.playing_position)
-            t = float(song.current_song_time)
-            for clip in getattr(track, 'arrangement_clips', ()):
-                if clip.start_time <= t < clip.end_time and not getattr(clip, 'muted', False):
-                    return clip, _arrangement_position(clip, t)
+                return clip, _arrangement_position(clip, float(song.current_song_time))
         except Exception as e:
             self._log('ROLI for Live: playing-notes lookup failed: %s' % e)
         return None, None

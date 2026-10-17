@@ -2,6 +2,23 @@
 
 ## Unreleased (fork)
 
+- Determine Arrangement scale source from running transport, timeline bounds and track
+  override state rather than additionally requiring the clip's own `is_playing` flag.
+  Add an explicit empty D-minor / C-major clip boundary regression.
+- Add persistent, opt-in **Clip scale** following for the selected track's playing MIDI
+  clip, independent of clip selection and Playing notes. Read clip root, mode and scale
+  metadata on compatible hosts (introduced in Live 12.4.15b1); fall back explicitly to
+  Live scale on stop, gaps, unavailable API or read errors without changing Live state.
+- Share Session/Arrangement clip discovery between scale and note feedback, respecting
+  Session stop/override states rather than lighting silent Arrangement clips underneath.
+- Add the fifth native-theme control without increasing device width or reducing
+  button targets. Migrate preference schemas 1/2 to 3 without resetting saved values;
+  preserve existing bridge replies and add v4 with scale-source diagnostics.
+- Cover clip-scale selection independence, handoffs, edits, fallback, reconnect,
+  persistence and UI/bridge behavior with simulated-host and generated-device tests.
+  User confirmed empty D-minor / C-major Arrangement transitions on Piano 49 with
+  Live 12.4.15b7 after the playback-flag correction and restart (2026-10-16).
+  Session clip-scale following is not yet separately hardware-qualified.
 - Use a real elapsed-time deadline for keyboard readiness even if Live suspends display
   callbacks, and rediscover the active surface on every device poll to reject stale IDs.
 - Show neutral **Disconnected** status when the ROLI surface is missing or the keyboard

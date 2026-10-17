@@ -27,7 +27,7 @@ nothing to add to your Live Sets.
 
 | | |
 |---|---|
-| 🎼 **Scale guide** | The keys show Live's current root note and scale (when Scale mode is on). |
+| 🎼 **Scale guide** | The keys show Live's current root note and scale, or optionally the selected track's playing MIDI clip scale on compatible Live versions. |
 | 🎨 **Track colors** | White keys with roots in the selected track's color by default; optional live controls switch to track-colored keys with brighter roots. |
 | ✨ **Playing notes** | Keys light white as the selected track's clip plays (Session and Arrangement). |
 | ⏮️⏭️ **Track buttons** | The keyboard's `<` / `>` buttons select the previous/next track. |
@@ -98,17 +98,18 @@ pitch bend range to **48** to match the keyboard.
 
 ## Optional live controls (experimental)
 
-The code-first **ROLI Controls** Max for Live device provides four buttons:
+The code-first **ROLI Controls** Max for Live device provides five buttons:
 
 | Control | Behavior |
 |---|---|
-| **Scale lighting: ON / OFF** | On follows Live's scale, root and track colors. Off restores all lighting settings captured before the script took control, not a factory reset. Track navigation and MPE stay active. |
+| **Scale lighting: ON / OFF** | On follows the chosen scale source and selected track colors. Off restores all lighting settings captured before the script took control, not a factory reset. Track navigation and MPE stay active. |
 | **Key colors: White / Track** | White keys with track-colored roots, or track-colored keys with brighter roots. Used only when Scale lighting is on. |
 | **Root color: ON / OFF** | Off removes the special root color: root keys match the other lit keys in White and Track modes. It does not make them dark or disable those notes. Used only when Scale lighting is on. |
 | **Playing notes: ON / OFF** | Independently enables/disables temporary white highlights for sounding clip notes and Live's note feedback. It does not switch root-note coloring off. Turning it off clears feedback notes; normal performance MIDI is unaffected. |
+| **Clip scale: ON / OFF** | On follows the playing MIDI clip on the selected track, without selecting it or changing Live's global scale. Off follows Live's global scale as before. Used only when Scale lighting is on. |
 
-Without saved preferences, the defaults are **White**, **Scale lighting ON**, and
-**Playing notes ON**, and **Root color ON**, including when no Max device is loaded. The keyboard's active
+Without saved preferences, the defaults are **White**, **Scale lighting ON**,
+**Clip scale OFF**, **Playing notes ON**, and **Root color ON**, including when no Max device is loaded. The keyboard's active
 scale/display mode still determines which keys display the selected colors.
 
 Requires Max for Live and **Max 9** (the device uses `v8` JavaScript). This is an
@@ -124,8 +125,29 @@ experimental fork feature, not included in the upstream release downloads.
    ```
 3. Start Live with the ROLI control surface enabled. Drag
    `dist/m4l/ROLI Controls.amxd` onto a MIDI track, before any instrument.
-4. Wait for **Connected**, then use the four buttons. No script reinstall or Live restart
+4. Wait for **Connected**, then use the five buttons. No script reinstall or Live restart
    is needed for subsequent changes.
+
+**Clip-scale following** requires clip-level scale properties, introduced in
+[Live 12.4.15b1](https://www.ableton.com/en/release-notes/live-12-beta/).
+It reads the playing clip's root, scale mode, intervals and scale name together. Session
+clips take precedence over Arrangement clips on the selected track; Arrangement following
+uses the running transport and clip timeline bounds, not the clip's own `is_playing` flag,
+so empty clips can guide the scale too. It respects muted clips and Session stop/override states. Playback handoffs
+and edits to a playing clip's scale are checked on the script's display updates (roughly
+10 Hz), independently of Playing notes. This follows the clip's assigned scale, not chord
+changes inferred from its MIDI notes. Existing keyboard built-in scale limitations remain.
+
+The status shows **Playing clip scale** while following a clip and **Live scale (no clip)**
+when stopped, in an Arrangement gap, or on a track with no applicable playing MIDI clip.
+If the host does not expose the clip-scale properties, or a read fails, the script uses
+Live's scale with an explicit **Clip scale unavailable** or **Clip scale read error** status
+and a diagnostic in Live's log. It retries automatically without discarding the saved
+Clip scale choice. No transport, clip selection, clip metadata or global scale is written.
+The user confirmed empty adjacent D-minor and C-major Arrangement clips change the
+Piano's lighting during playback on Live 12.4.15b7 (2026-10-16), after the Arrangement
+playback-flag correction and a Live restart. Other paths have automated simulated-host
+coverage; Session clip-scale following has not yet been separately hardware-qualified.
 
 The UI reads the script's accepted settings every 500 ms. **Connected** means keyboard
 initialization is complete and a real keyboard reply was received within roughly five
@@ -163,8 +185,10 @@ The settings file is read when the script starts and is not removed at shutdown.
 The Mac installation's Dropbox User Library therefore syncs these preferences. Settings
 are global, not per Live Set; they are not re-read live if another computer edits the file.
 Avoid simultaneous edits on multiple computers (Dropbox conflict resolution is not handled).
-Existing three-preference settings files are read without resetting your choices.
-Root color starts on for these files; the next successful change writes the new schema.
+Existing three- and four-preference settings files are read without resetting your choices.
+Root color starts on when absent, and Clip scale starts off. The next successful change
+writes schema version 3, retaining all previous choices. Older control devices can still
+use the existing bridge methods; the five-button device requires the updated script.
 
 Missing settings use the defaults. Invalid/unreadable files use defaults **with an explicit
 Live notification and device error status**, and are not silently overwritten on startup.

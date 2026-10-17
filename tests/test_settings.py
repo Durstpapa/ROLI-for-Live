@@ -14,7 +14,7 @@ class FakeInstance(object):
         self.velocity = value
 
 
-class SettingsTests(unittest.TestCase):
+class SurfaceTestCase(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.old_paths = roli_for_live.SNAPSHOT_PATH, roli_for_live.SETTINGS_PATH
@@ -64,6 +64,8 @@ class SettingsTests(unittest.TestCase):
         for item in list(roli_for_live.SHARED_LIGHTING_ITEMS) + [100, 104]:
             self.assertEqual(DEVICE[item], self.original[item], item)
 
+
+class SettingsTests(SurfaceTestCase):
     def test_missing_file_uses_explicit_defaults_without_rewriting(self):
         surface, instance = self.create()
         self.assertEqual(surface.get_roli_controls_state(), 'roli_controls_v2 1 1 1 0 1')
@@ -81,7 +83,8 @@ class SettingsTests(unittest.TestCase):
         surface.set_roli_root_color(0)
         tick(surface, 10)
         self.assertEqual(self.read_settings(), dict(
-            version=2, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False))
+            version=3, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
+            clip_scale=False))
         surface, instance = self.restart(surface)
         tick(surface, 60)
         self.assertEqual(surface.get_roli_controls_state(), 'roli_controls_v2 0 0 0 1 1')
@@ -90,7 +93,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(ControlSurface.feedback_channels, [])
         self.assertEqual(instance.velocity, 0)
         for setter in (surface.set_roli_white_keys, surface.set_roli_scale_lighting,
-                       surface.set_roli_playing_notes, surface.set_roli_root_color):
+                       surface.set_roli_playing_notes, surface.set_roli_root_color,
+                       surface.set_roli_clip_scale):
             setter(1)
         surface, instance = self.restart(surface)
         tick(surface, 60)
@@ -362,7 +366,8 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(self.read_settings(), legacy, 'loading must not rewrite the old file')
         surface.set_roli_root_color(0)
         self.assertEqual(self.read_settings(), dict(
-            version=2, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False))
+            version=3, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
+            clip_scale=False))
         surface, instance = self.restart(surface)
         self.assertEqual(surface.get_roli_controls_state_v3(), 'roli_controls_v3 0 0 0 0 0 1')
 

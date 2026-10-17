@@ -31,18 +31,20 @@ function setup({ retainRemovedIds = false } = {}) {
         }
         call(name, value) {
             assert.ok(this.id, "must not call a stale surface");
-            if (name === "get_roli_controls_state_v3") {
+            if (name === "get_roli_controls_state_v4") {
                 if (this.target.error) throw new Error(this.target.error);
                 if (this.target.reply) return this.target.reply;
-                return ["roli_controls_v3", this.target.white, this.target.scale ?? 1,
-                    this.target.notes ?? 1, this.target.root ?? 1, this.target.ready,
-                    this.target.settingsOk === false ? 0 : 1];
+                return ["roli_controls_v4", this.target.white, this.target.scale ?? 1,
+                    this.target.notes ?? 1, this.target.root ?? 1, this.target.clip ?? 0,
+                    this.target.ready, this.target.settingsOk === false ? 0 : 1,
+                    this.target.source ?? (this.target.clip ? "clip" : "live")];
             }
             const fields = {
                 set_roli_white_keys: "white",
                 set_roli_scale_lighting: "scale",
                 set_roli_playing_notes: "notes",
-                set_roli_root_color: "root"
+                set_roli_root_color: "root",
+                set_roli_clip_scale: "clip"
             };
             assert.ok(fields[name], "only known settings may be written");
             writes.push(value);
@@ -53,7 +55,7 @@ function setup({ retainRemovedIds = false } = {}) {
                 this.target[fields[name]] = value;
                 this.target.settingsOk = true;
             }
-            return this.call("get_roli_controls_state_v3");
+            return this.call("get_roli_controls_state_v4");
         }
     }
     class Task {
@@ -71,7 +73,7 @@ function setup({ retainRemovedIds = false } = {}) {
         context, outputs, logs, writes, commands, tasks,
         surfaces: value => { surfaces = value; },
         click(index = 1) { context.inlet = index; context.bang(); },
-        status() { return outputs.filter(o => o[0] === 4).at(-1)?.[2]; },
+        status() { return outputs.filter(o => o[0] === 5 && o[1] === "set").at(-1)?.[2]; },
         label(index = 0) { return outputs.filter(o => o[0] === index && o[1] === "text").at(-1)?.[2]; }
     };
 }
@@ -135,7 +137,7 @@ test("missing connection shows neutral status and reconnects automatically", () 
     h.surfaces([]);
     h.context.bang();
     assert.equal(h.status(), "Disconnected");
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 5; index++) {
         assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1), [index, "active", 0]);
     }
     h.context.refresh();
@@ -146,7 +148,7 @@ test("missing connection shows neutral status and reconnects automatically", () 
     assert.equal(h.label(), "Key colors: White");
     assert.equal(h.tasks.length, 1, "reconnection must not require reloading the device");
     assert.deepEqual(h.writes, [], "automatic connection must not change preferences");
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 5; index++) {
         assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1), [index, "active", 1]);
     }
 });
@@ -175,7 +177,7 @@ test("polling rejects a removed surface even when its old API object retains a v
 
 test("accepts a generic ControlSurface only when its API advertises the bridge", () => {
     const h = setup();
-    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v3", white: 0, ready: 1 }]);
+    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v4", white: 0, ready: 1 }]);
     h.context.bang();
     assert.equal(h.status(), "Connected");
 });
@@ -214,7 +216,11 @@ test("power-off and reconnection update status on the same live script without c
 });
 
 test("invalid or old script replies fail explicitly before any write", () => {
-    for (const reply of [["roli_controls_v2", 0, 1, 1, 1, 1], ["roli_controls_v3", 2, 1, 1, 1, 1, 1]]) {
+    for (const reply of [
+        ["roli_controls_v2", 0, 1, 1, 1, 1], ["roli_controls_v3", 1, 1, 1, 1, 1, 1],
+        ["roli_controls_v4", 2, 1, 1, 1, 0, 1, 1, "live"],
+        ["roli_controls_v4", 1, 1, 1, 1, 0, 1, 1, "unknown"]
+    ]) {
         const h = setup();
         h.surfaces([{ id: 7, reply }]);
         h.click();
@@ -231,7 +237,7 @@ test("API failures and rejected settings never report success", () => {
     h.surfaces([{ id: 8, white: 0, ready: 1, reject: true }]);
     h.click();
     assert.match(h.status(), /did not accept/);
-    for (let index = 0; index < 4; index++) {
+    for (let index = 0; index < 5; index++) {
         assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1), [index, "active", 0]);
     }
 });
@@ -319,4 +325,70 @@ test("reinitialization and deletion cancel polling", () => {
     assert.equal(h.tasks[0].cancelled, true);
     h.context.notifydeleted();
     assert.equal(h.tasks[1].cancelled, true);
+});
+
+test("clip-scale control alternates confirmed state independently and never writes on load", () => {
+    const h = setup();
+    h.context.bang();
+    assert.equal(h.label(4), "Clip scale: OFF");
+    assert.deepEqual(h.writes, []);
+    h.click(5);
+    assert.equal(h.label(4), "Clip scale: ON");
+    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.label(2), "Playing notes: ON");
+    h.click(5);
+    assert.equal(h.label(4), "Clip scale: OFF");
+    assert.equal(h.status(), "Connected");
+    assert.deepEqual(h.commands, [["set_roli_clip_scale", 1], ["set_roli_clip_scale", 0]]);
+    assert.equal(h.tasks.length, 1);
+});
+
+test("clip-scale source and fallback messages remain explicit and recover automatically", () => {
+    const h = setup();
+    const surface = { id: 7, white: 1, clip: 1, ready: 1, source: "idle" };
+    h.surfaces([surface]);
+    h.context.bang();
+    assert.equal(h.label(4), "Clip scale: ON");
+    assert.equal(h.status(), "Connected\nLive scale (no clip)");
+    for (const [source, label] of [
+        ["unsupported", "Clip scale unavailable"], ["error", "Clip scale read error"]
+    ]) {
+        surface.source = source;
+        h.context.refresh();
+        assert.equal(h.status(), `Connected\n${label}\nUsing Live scale`);
+        const logs = h.logs.length;
+        h.context.refresh();
+        assert.equal(h.logs.length, logs);
+    }
+    surface.ready = 0;
+    h.context.refresh();
+    assert.equal(h.status(), "Disconnected");
+    surface.ready = 1;
+    surface.source = "clip";
+    h.context.refresh();
+    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.deepEqual(h.writes, []);
+});
+
+test("scale lighting off preserves clip source choice while disabling its control", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, white: 1, scale: 0, clip: 1, ready: 1, source: "off" }]);
+    h.context.bang();
+    assert.equal(h.label(4), "Clip scale: ON");
+    assert.deepEqual(h.outputs.filter(o => o[0] === 4 && o[1] === "active").at(-1),
+        [4, "active", 0]);
+    h.click(2);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 4 && o[1] === "active").at(-1),
+        [4, "active", 1]);
+    assert.equal(h.label(4), "Clip scale: ON");
+});
+
+test("failed clip setting saves never confirm a successful change", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, white: 1, ready: 1, failSave: true }]);
+    h.context.bang();
+    h.click(5);
+    assert.match(h.status(), /Settings were not saved/);
+    assert.equal(h.label(4), "Clip scale: OFF");
+    assert.deepEqual(h.commands, [["set_roli_clip_scale", 1]]);
 });

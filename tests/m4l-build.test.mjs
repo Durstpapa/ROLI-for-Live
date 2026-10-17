@@ -23,12 +23,12 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
     assert.equal(toggle.saved_attribute_attributes.activebgcolor.expression, "themecolor.live_control_bg");
     assert.equal(toggle.saved_attribute_attributes.focusbordercolor.expression, "themecolor.live_focus_frame");
     const visible = boxes.filter(b => b.presentation === 1);
-    assert.equal(visible.length, 5, "only four buttons and status should remain visible");
+    assert.equal(visible.length, 6, "only five buttons and status should remain visible");
     assert.deepEqual(
         visible.filter(b => b.maxclass === "live.text")
             .sort((a, b) => a.presentation_rect[1] - b.presentation_rect[1])
             .map(b => b.varname),
-        ["scale_lighting", "white_keys", "root_color", "playing_notes"],
+        ["scale_lighting", "white_keys", "root_color", "playing_notes", "clip_scale"],
         "requested top-to-bottom order must not change inlet/outlet semantics");
     assert.ok(!visible.some(b => /proof of concept|js2max|Live color switch/i.test(b.text)));
     for (const box of visible) {
@@ -56,9 +56,9 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
     assert.ok(hasEdge(init.id, 0, script.id, 0));
     assert.ok(hasEdge(toggle.id, 0, script.id, 1));
     assert.ok(hasEdge(script.id, 0, toggle.id, 0));
-    assert.equal(script.numinlets, 5);
-    assert.equal(script.numoutlets, 5);
-    for (const [index, name] of ["white_keys", "scale_lighting", "playing_notes", "root_color"].entries()) {
+    assert.equal(script.numinlets, 6);
+    assert.equal(script.numoutlets, 6);
+    for (const [index, name] of ["white_keys", "scale_lighting", "playing_notes", "root_color", "clip_scale"].entries()) {
         const control = boxes.find(b => b.varname === name);
         assert.ok(hasEdge(control.id, 0, script.id, index + 1));
         assert.ok(hasEdge(script.id, index, control.id, 0));
@@ -67,7 +67,7 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
         assert.equal(control.parameter_enable, 0);
         assert.ok(control.presentation_rect[2] >= 24 && control.presentation_rect[3] >= 24);
     }
-    assert.ok(hasEdge(script.id, 4, "roli-status", 0));
+    assert.ok(hasEdge(script.id, 5, "roli-status", 0));
     assert.equal(edges.filter(e => e[0] === midiIn.id).length, 1);
     assert.equal(edges.filter(e => e[2] === midiOut.id).length, 1);
     for (const e of edges) {
