@@ -58,9 +58,10 @@ def playing_clip(song, track):
 
 class PlayingNotes(object):
 
-    def __init__(self, send_midi, log):
+    def __init__(self, send_midi, log, velocity=VELOCITY):
         self._send_midi = send_midi
         self._log = log
+        self._velocity = velocity
         self._track = None
         self._clip = None
         self._notes = []
@@ -101,7 +102,7 @@ class PlayingNotes(object):
         for pitch in sorted(self._lit - sounding):
             self._send_midi((NOTE_OFF, pitch, 0))
         for pitch in sorted(sounding - self._lit):
-            self._send_midi((NOTE_ON, pitch, VELOCITY))
+            self._send_midi((NOTE_ON, pitch, self._velocity))
         self._lit = sounding
 
     def _playing_clip(self, song):

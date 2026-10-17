@@ -295,7 +295,8 @@ class ClipScaleTests(SurfaceTestCase):
         self.assertEqual(self.read_settings(), legacy)
         self.assertFalse(surface._settings['clip_scale'])
         surface.set_roli_clip_scale(1)
-        expected = dict(legacy, version=3, clip_scale=True)
+        expected = dict(legacy, version=4, clip_scale=True,
+                        background_intensity=100, global_brightness=None)
         self.assertEqual(self.read_settings(), expected)
 
     def test_failed_clip_preference_save_never_changes_runtime_source(self):

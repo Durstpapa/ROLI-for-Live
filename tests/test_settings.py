@@ -22,7 +22,7 @@ class SurfaceTestCase(unittest.TestCase):
         roli_for_live.SETTINGS_PATH = os.path.join(self.directory.name, 'settings.json')
         fake.SERIAL_REPLY = fake.serial_reply(b'RP4800000000TEST')
         DEVICE.clear()
-        DEVICE.update({20: 0, 22: 3, 27: 5, 34: -1002466, 35: -3623796,
+        DEVICE.update({20: 0, 22: 3, 27: 5, 34: -1002466, 35: -3623796, 36: 100,
                        100: 0, 101: 0, 102: 0, 103: 0, 104: 0})
         self.original = dict(DEVICE)
         ControlSurface.sent[:] = []
@@ -83,8 +83,8 @@ class SettingsTests(SurfaceTestCase):
         surface.set_roli_root_color(0)
         tick(surface, 10)
         self.assertEqual(self.read_settings(), dict(
-            version=3, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
-            clip_scale=False))
+            version=4, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
+            clip_scale=False, background_intensity=100, global_brightness=None))
         surface, instance = self.restart(surface)
         tick(surface, 60)
         self.assertEqual(surface.get_roli_controls_state(), 'roli_controls_v2 0 0 0 1 1')
@@ -366,8 +366,8 @@ class SettingsTests(SurfaceTestCase):
         self.assertEqual(self.read_settings(), legacy, 'loading must not rewrite the old file')
         surface.set_roli_root_color(0)
         self.assertEqual(self.read_settings(), dict(
-            version=3, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
-            clip_scale=False))
+            version=4, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
+            clip_scale=False, background_intensity=100, global_brightness=None))
         surface, instance = self.restart(surface)
         self.assertEqual(surface.get_roli_controls_state_v3(), 'roli_controls_v3 0 0 0 0 0 1')
 

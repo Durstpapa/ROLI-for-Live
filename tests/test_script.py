@@ -22,7 +22,8 @@ def serial_reply(serial):
 SERIAL_REPLY = serial_reply(b'RP4800000000TEST')
 
 COMMANDS = []
-DEVICE = {20: 0, 22: 0, 27: 0, 34: -1002466, 35: -3623796, 100: 0, 101: 1, 102: 0, 103: 1, 104: 1}
+DEVICE = {20: 0, 22: 0, 27: 0, 34: -1002466, 35: -3623796, 36: 100,
+          100: 0, 101: 1, 102: 0, 103: 1, 104: 1}
 
 
 def device_reply(item, value):
@@ -253,7 +254,7 @@ def test_lumi():
     global SERIAL_REPLY
     SERIAL_REPLY = serial_reply(b'LKB000000000TEST')
     DEVICE.clear()
-    DEVICE.update({20: 1, 22: 3, 27: 5, 34: -1002466, 35: -3623796})
+    DEVICE.update({20: 1, 22: 3, 27: 5, 34: -1002466, 35: -3623796, 36: 100})
     for mode in range(4):
         for offset in range(5):
             DEVICE[100 + 7 * mode + offset] = 0

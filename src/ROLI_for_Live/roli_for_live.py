@@ -22,6 +22,7 @@ SCALE = 22
 KEY = 27
 GLOBAL_KEY_COLOUR = 34
 ROOT_KEY_COLOUR = 35
+BRIGHTNESS = 36
 # Per-mode items: mode N uses 100 + 7 * N + offset (modes 0-3).
 NUM_MODES = 4
 _COLOR_TYPE, _MIDI_MODE, _PITCH_ENABLE, _PRESSURE_ENABLE, _SHOW_SCALE = range(5)
@@ -32,7 +33,7 @@ def mode_item(mode, offset):
 
 
 COLOR_TYPE_USER = 1
-SHARED_LIGHTING_ITEMS = (SCALE, KEY, GLOBAL_KEY_COLOUR, ROOT_KEY_COLOUR)
+SHARED_LIGHTING_ITEMS = (SCALE, KEY, GLOBAL_KEY_COLOUR, ROOT_KEY_COLOUR, BRIGHTNESS)
 
 BUTTON_PREVIOUS = 3  # "<"
 BUTTON_NEXT = 4      # ">"
@@ -66,12 +67,21 @@ MIN_WRITE_INTERVAL_TICKS = 2
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device_snapshot.json')
 SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
 DEFAULT_SETTINGS = dict(white_keys=True, scale_lighting=True, playing_notes=True, root_color=True,
-                        clip_scale=False)
+                        clip_scale=False, background_intensity=100, global_brightness=None)
+
+
+def _is_percent(value):
+    return type(value) is int and 0 <= value <= 100
 
 
 def _argb(rgb):
     v = 0xFF000000 | (rgb & 0xFFFFFF)
     return v - (1 << 32)
+
+
+def _dim(rgb, amount):
+    r, g, b = (rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF
+    return (int(r * amount) << 16) | (int(g * amount) << 8) | int(b * amount)
 
 
 def _visible(rgb, floor=0x50):
@@ -117,12 +127,16 @@ class ROLIForLive(ControlSurface):
             self._clip_scale_error = None
             self._settings_error = False
             self._settings = self._load_settings()
-            self._playing = PlayingNotes(self._send_midi, self.log_message)
+            self._playing = PlayingNotes(self._send_midi, self.log_message,
+                                         velocity=PLAYING_NOTES_FEEDBACK_VELOCITY)
             self._add_song_listeners()
             self._configure_note_feedback()
             self._on_track_selected()
             from . import __version__
             self.log_message('ROLI for Live %s: started' % __version__)
+            if PLAYING_NOTES_FEEDBACK_VELOCITY != 127:
+                self.log_message('ROLI for Live: temporary playback-highlight test at '
+                                 'feedback velocity %d' % PLAYING_NOTES_FEEDBACK_VELOCITY)
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -151,6 +165,13 @@ class ROLIForLive(ControlSurface):
             int(self._settings['clip_scale']), int(self._keyboard_ready()),
             int(not self._settings_error), self._scale_source_status)
 
+    def get_roli_controls_state_v5(self):
+        brightness = self._settings['global_brightness']
+        if brightness is None:
+            brightness = self._device_config.get(BRIGHTNESS, -1)
+        return self.get_roli_controls_state_v4().replace('roli_controls_v4', 'roli_controls_v5', 1) + (
+            ' %d %d' % (brightness, self._settings['background_intensity']))
+
     def _keyboard_ready(self):
         return (self._serial is not None and self._snapshot is not None and self._mode is not None
                 and self._last_response is not None
@@ -176,6 +197,25 @@ class ROLIForLive(ControlSurface):
         self._set_setting('clip_scale', value)
         return self.get_roli_controls_state_v4()
 
+    def set_roli_global_brightness(self, value):
+        self._set_level('global_brightness', value)
+        return self.get_roli_controls_state_v5()
+
+    def set_roli_background_intensity(self, value):
+        self._set_level('background_intensity', value)
+        return self.get_roli_controls_state_v5()
+
+    def _set_level(self, name, value):
+        if not _is_percent(value):
+            self.log_message('ROLI for Live: rejected %s value %r' % (name, value))
+            raise ValueError('%s must be an integer from 0 to 100' % name)
+        updated = dict(self._settings)
+        updated[name] = value
+        self._save_settings(updated)
+        self._settings = updated
+        self._update_lighting()
+        self.log_message('ROLI for Live: saved %s %d%%' % (name, value))
+
     def _set_setting(self, name, value):
         if type(value) is not int or value not in (0, 1):
             self.log_message('ROLI for Live: rejected %s value %r' % (name, value))
@@ -200,16 +240,24 @@ class ROLIForLive(ControlSurface):
             with open(SETTINGS_PATH) as file:
                 stored = json.load(file)
             if (not isinstance(stored, dict) or type(stored.get('version')) is not int
-                    or stored['version'] not in (1, 2, 3)):
+                    or stored['version'] not in (1, 2, 3, 4)):
                 raise ValueError('Invalid settings schema or version')
             fields = set(DEFAULT_SETTINGS)
+            levels = {'background_intensity', 'global_brightness'}
+            if stored['version'] < 4:
+                fields -= levels
             if stored['version'] < 3:
                 fields.remove('clip_scale')
             if stored['version'] == 1:
                 fields.remove('root_color')
             if (set(stored) != fields | {'version'}
-                    or any(type(stored[name]) is not bool for name in fields)):
+                    or any(type(stored[name]) is not bool for name in fields - levels)):
                 raise ValueError('Invalid settings schema or version')
+            if stored['version'] == 4 and (
+                    not _is_percent(stored['background_intensity'])
+                    or (stored['global_brightness'] is not None
+                        and not _is_percent(stored['global_brightness']))):
+                raise ValueError('Invalid brightness settings')
             settings = dict(DEFAULT_SETTINGS)
             settings.update((name, stored[name]) for name in fields)
             return settings
@@ -225,7 +273,7 @@ class ROLIForLive(ControlSurface):
             fd, temporary = tempfile.mkstemp(prefix='.roli-settings-', suffix='.tmp',
                                              dir=os.path.dirname(SETTINGS_PATH))
             with os.fdopen(fd, 'w') as file:
-                json.dump(dict(settings, version=3), file, sort_keys=True)
+                json.dump(dict(settings, version=4), file, sort_keys=True)
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(temporary, SETTINGS_PATH)
@@ -417,6 +465,7 @@ class ROLIForLive(ControlSurface):
 
     def _take_snapshot(self):
         snap = None
+        changed = False
         try:
             if os.path.exists(SNAPSHOT_PATH):
                 with open(SNAPSHOT_PATH) as f:
@@ -428,6 +477,11 @@ class ROLIForLive(ControlSurface):
         if snap is None:
             snap = dict((i, self._device_config[i])
                         for i in list(SHARED_LIGHTING_ITEMS) + self._lighting_mode_items())
+            changed = True
+        elif BRIGHTNESS not in snap:
+            snap[BRIGHTNESS] = self._device_config[BRIGHTNESS]
+            changed = True
+        if changed:
             try:
                 with open(SNAPSHOT_PATH, 'w') as f:
                     json.dump({'serial': self._serial, 'mode': self._mode, 'items': snap}, f)
@@ -501,10 +555,13 @@ class ROLIForLive(ControlSurface):
     def _update_lighting(self):
         if self._serial is None or self._snapshot is None or self._mode is None:
             return
+        if self._settings['global_brightness'] is not None:
+            self._write(BRIGHTNESS, self._settings['global_brightness'])
         if not self._settings['scale_lighting']:
             self._scale_source_status = 'off'
             for item, value in self._snapshot.items():
-                self._write(item, value)
+                if item != BRIGHTNESS:
+                    self._write(item, value)
             return
         root, scale_on, intervals, name = self._scale_state()
         index = builtin_index(intervals)
@@ -524,8 +581,10 @@ class ROLIForLive(ControlSurface):
         self._write(SCALE, index)
         key_color = 0xFFFFFF if self._settings['white_keys'] else color
         root_color = color if self._settings['white_keys'] else _brighter(color)
-        self._write(GLOBAL_KEY_COLOUR, _argb(key_color))
-        self._write(ROOT_KEY_COLOUR, _argb(root_color if self._settings['root_color'] else key_color))
+        root_color = root_color if self._settings['root_color'] else key_color
+        intensity = self._settings['background_intensity'] / 100.0
+        self._write(GLOBAL_KEY_COLOUR, _argb(_dim(key_color, intensity)))
+        self._write(ROOT_KEY_COLOUR, _argb(_dim(root_color, intensity)))
 
     def _track_color(self):
         track = self._track

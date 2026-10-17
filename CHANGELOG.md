@@ -2,6 +2,28 @@
 
 ## Unreleased (fork)
 
+- Clarify the product as a ROLI Piano integration, not a general ROLI controller script.
+  Distinguish tested Piano 49 support from experimental, hardware-untested Piano M
+  (formerly LUMI Keys) support; document separate Lightpad routing and exclude Lightpad/Seaboard
+  integration without renaming installed components.
+- Keep native slider parameter engines enabled (Hidden visibility, no initialization)
+  so their numeric ranges work. Validate native 0/100 readback before enabling controls,
+  rather than relying only on generated patch structure and mocked bridge tests.
+- Add saved **Global brightness** and **Background intensity** sliders beside the
+  unchanged button stack in a 240-unit native-theme device. Leave hardware brightness
+  untouched until explicitly changed; keep global brightness active with Scale lighting
+  off and restore captured native brightness when the script disconnects.
+- Migrate preferences to schema 4 and preserve legacy bridge methods with a new v5 reply.
+  Safely extend legacy recovery snapshots with observed brightness, retaining original
+  captured colors. Coalesce slider writes and never apply startup/default widget values.
+- Promote the successful native background RGB experiment to a saved percentage control.
+  User confirmed useful contrast at 25% with native highlights at velocity 127 on Piano 49 /
+  Live 12.4.15b7 (2026-10-16). After the native slider range correction, the user
+  confirmed both brightness controls work on the same setup.
+- Wire both playback-feedback paths to the same test velocity. A temporary velocity-64
+  trial retained the successful 25% background. Live's startup log confirmed the trial
+  was loaded, but the user saw no perceptible highlight-brightness change on Piano 49
+  (2026-10-16). Restore feedback 127; do not expose this as a brightness control.
 - Determine Arrangement scale source from running transport, timeline bounds and track
   override state rather than additionally requiring the clip's own `is_playing` flag.
   Add an explicit empty D-minor / C-major clip boundary regression.

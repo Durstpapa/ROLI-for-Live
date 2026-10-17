@@ -7,14 +7,15 @@ const source = fileURLToPath(new URL("./ROLI-Controls.js", import.meta.url));
 export const outputDir = fileURLToPath(new URL("../dist/m4l/", import.meta.url));
 
 export async function build() {
-    const patch = await compile(source, { deviceWidth: 140 });
+    const patch = await compile(source, { deviceWidth: 240 });
     const p = patch.patcher;
     const boxes = p.boxes.map(({ box }) => box);
     const script = boxes.find(box => box.text === "v8");
     const midiIn = boxes.find(box => box.text === "midiin");
     const midiOut = boxes.find(box => box.text === "midiout");
     const controls = boxes.filter(box => box.maxclass === "live.text");
-    if (!script || !midiIn || !midiOut || controls.length !== 5) {
+    const sliders = boxes.filter(box => box.maxclass === "live.slider");
+    if (!script || !midiIn || !midiOut || controls.length !== 5 || sliders.length !== 2) {
         throw new Error("Unexpected js2max template; cannot safely wire controls");
     }
     p.boxes = p.boxes.filter(({ box }) => box.maxclass !== "comment");
@@ -54,6 +55,46 @@ export async function build() {
             bordercolor: { expression: "themecolor.live_contrast_frame" },
             focusbordercolor: { expression: "themecolor.live_focus_frame" }
         };
+    });
+
+    const levels = [
+        ["global_brightness", "Global\nBrightness (%)",
+            "Global LED brightness, including playback highlights. Works with Scale lighting on or off. Saved only when changed; script shutdown restores the captured hardware brightness."],
+        ["background_intensity", "Background\nBrightness (%)",
+            "Background and root RGB intensity relative to playback highlights. Used when Scale lighting is on. This is an RGB percentage, not calibrated perceptual brightness."]
+    ];
+    sliders.forEach((slider, index) => {
+        const [name, label, annotation] = levels[index];
+        const y = 6 + index * 76;
+        slider.varname = name;
+        slider.parameter_enable = 1;
+        slider.active = 0;
+        slider.orientation = 1;
+        slider.showname = 0;
+        slider.shownumber = 1;
+        slider.fontsize = 11;
+        slider.annotation = annotation;
+        slider.presentation_rect = [144, y + 30, 88, 28];
+        slider.saved_object_attributes = { parameter_enable: 1 };
+        slider.saved_attribute_attributes = {
+            valueof: {
+                parameter_longname: name, parameter_shortname: label.replace("\n", " "),
+                parameter_type: 1, parameter_mmin: 0, parameter_mmax: 100,
+                parameter_initial_enable: 0, parameter_invisible: 2
+            },
+            slidercolor: { expression: "themecolor.live_control_fg" },
+            textcolor: { expression: "themecolor.live_control_fg" },
+            focusbordercolor: { expression: "themecolor.live_focus_frame" }
+        };
+        p.lines.push({ patchline: { source: [script.id, index + 6], destination: [slider.id, 0] } });
+        p.boxes.push({ box: {
+            id: `label-${name}`, maxclass: "comment", numinlets: 1, numoutlets: 0,
+            text: label, annotation,
+            patching_rect: [144, 570 + index * 32, 88, 28],
+            presentation: 1, presentation_rect: [144, y, 88, 28],
+            fontsize: 10, linecount: 2,
+            saved_attribute_attributes: { textcolor: { expression: "themecolor.live_control_fg" } }
+        } });
     });
 
     // A text acknowledgement is deliberately not a green hardware-confirmation LED.

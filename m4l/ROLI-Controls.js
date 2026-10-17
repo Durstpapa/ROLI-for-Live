@@ -4,12 +4,16 @@
 // @ui live.text "Playing notes" trigger inlet=3
 // @ui live.text "Root color" trigger inlet=4
 // @ui live.text "Clip scale" trigger inlet=5
-inlets = 6;
-outlets = 6;
+// @ui live.slider "Global brightness" inlet=6 min=0 max=100
+// @ui live.slider "Background intensity" inlet=7 min=0 max=100
+inlets = 8;
+outlets = 8;
 
 var surface = null;
 var pollTask = null;
 var lastError = "";
+var levelTask = null;
+var pendingLevels = {};
 
 function status(text) {
     outlet(5, "set", text);
@@ -25,6 +29,8 @@ function disableControls() {
     for (var i = 0; i < 5; i++) {
         outlet(i, "active", 0);
     }
+    outlet(6, "active", 0);
+    outlet(7, "active", 0);
 }
 
 function reportError(text) {
@@ -36,16 +42,17 @@ function reportError(text) {
 }
 
 function readState(api) {
-    var reply = api.call("get_roli_controls_state_v4");
+    var reply = api.call("get_roli_controls_state_v5");
     var text = Array.isArray(reply) ? reply.join(" ") : String(reply);
-    var match = /^roli_controls_v4 ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) (live|clip|idle|unsupported|error|off)$/.exec(text);
-    if (!match) {
+    var match = /^roli_controls_v5 ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) (live|clip|idle|unsupported|error|off) (-1|\d{1,3}) (\d{1,3})$/.exec(text);
+    if (!match || Number(match[9]) > 100 || Number(match[10]) > 100) {
         throw new Error("Update ROLI script: unexpected reply " + text);
     }
     return {
         white: Number(match[1]), scale: Number(match[2]), notes: Number(match[3]),
         root: Number(match[4]), clip: Number(match[5]), ready: match[6] === "1",
-        settingsOk: match[7] === "1", source: match[8]
+        settingsOk: match[7] === "1", source: match[8],
+        brightness: Number(match[9]), background: Number(match[10])
     };
 }
 
@@ -59,7 +66,7 @@ function findSurface() {
         }
         var candidate = new LiveAPI(null, "id " + ids[++i]);
         if (candidate.type === "ROLIForLive" ||
-                String(candidate.info).indexOf("get_roli_controls_state_v4") !== -1) {
+                String(candidate.info).indexOf("get_roli_controls_state_v5") !== -1) {
             matches.push(candidate);
         }
     }
@@ -84,6 +91,14 @@ function refresh() {
         outlet(2, "active", 1);
         outlet(3, "active", state.scale);
         outlet(4, "active", state.scale);
+        if (state.brightness >= 0 && pendingLevels[0] === undefined) {
+            outlet(6, "set", state.brightness);
+        }
+        if (pendingLevels[1] === undefined) {
+            outlet(7, "set", state.background);
+        }
+        outlet(6, "active", state.ready && state.brightness >= 0 ? 1 : 0);
+        outlet(7, "active", state.ready && state.scale ? 1 : 0);
         if (!state.settingsOk) {
             reportError("Settings file error.\nSee Live log.");
         } else if (state.ready && state.scale && state.source === "unsupported") {
@@ -95,7 +110,7 @@ function refresh() {
             if (state.ready) {
                 text = "Connected";
                 if (!state.scale) {
-                    text += "\nROLI lighting restored";
+                    text += "\nNative colors restored";
                 } else if (state.clip) {
                     text += state.source === "clip" ? "\nPlaying clip scale" : "\nLive scale (no clip)";
                 }
@@ -118,12 +133,51 @@ function bang() {
     }
     if (pollTask) {
         pollTask.cancel();
+        pollTask = null;
+    }
+    if (levelTask) {
+        levelTask.cancel();
+        levelTask = null;
+    }
+    pendingLevels = {};
+    try {
+        verifySliderRanges();
+    } catch (error) {
+        disableControls();
+        reportError(String(error.message || error));
+        return;
     }
     // live.thisdevice starts this after Live's API is available.
     pollTask = new Task(refresh, this);
     pollTask.interval = 500;
     refresh();
     pollTask.repeat();
+}
+
+function verifySliderRanges() {
+    var names = ["global_brightness", "background_intensity"];
+    for (var i = 0; i < names.length; i++) {
+        var control = this.patcher.getnamed(names[i]);
+        if (!control) {
+            throw new Error("Missing brightness slider");
+        }
+        var previous = Number(control.getvalueof());
+        if (!isFinite(previous)) {
+            throw new Error("Cannot read brightness slider");
+        }
+        var minimum, maximum;
+        try {
+            control.message("set", 100);
+            maximum = Number(control.getvalueof());
+            control.message("set", 0);
+            minimum = Number(control.getvalueof());
+        } finally {
+            control.message("set", previous);
+        }
+        if (minimum !== 0 || maximum !== 100) {
+            throw new Error("Slider range error.\nReload updated device.");
+        }
+    }
 }
 
 function toggleSetting(index) {
@@ -152,10 +206,77 @@ function toggleSetting(index) {
     refresh();
 }
 
+function msg_int(value) {
+    queueLevel(value);
+}
+
+function msg_float(value) {
+    queueLevel(value);
+}
+
+function queueLevel(value) {
+    if (!pollTask) {
+        reportError("Waiting for Live API...");
+        return;
+    }
+    if ((inlet !== 6 && inlet !== 7) || typeof value !== "number" ||
+            !isFinite(value) || value < 0 || value > 100) {
+        reportError("Invalid brightness input");
+        return;
+    }
+    pendingLevels[inlet - 6] = Math.round(value);
+    if (!levelTask) {
+        levelTask = new Task(flushLevels, this);
+        levelTask.schedule(100);
+    }
+}
+
+function flushLevels() {
+    var levels = pendingLevels;
+    pendingLevels = {};
+    levelTask = null;
+    for (var index = 0; index < 2; index++) {
+        if (levels[index] === undefined) {
+            continue;
+        }
+        try {
+            surface = findSurface();
+            var state = readState(surface);
+            if (!state.ready) {
+                throw new Error("Disconnected");
+            }
+            var field = index === 0 ? "brightness" : "background";
+            var method = index === 0 ? "set_roli_global_brightness" : "set_roli_background_intensity";
+            var value = levels[index];
+            if (state[field] !== value || !state.settingsOk) {
+                surface.call(method, value);
+                var confirmed = readState(surface);
+                if (!confirmed.settingsOk) {
+                    throw new Error("Settings were not saved.\nSee Live log.");
+                }
+                if (confirmed[field] !== value) {
+                    throw new Error("Script did not accept the requested level");
+                }
+            }
+        } catch (error) {
+            surface = null;
+            disableControls();
+            reportError(String(error.message || error));
+            return;
+        }
+    }
+    refresh();
+}
+
 function notifydeleted() {
     if (pollTask) {
         pollTask.cancel();
         pollTask = null;
     }
+    if (levelTask) {
+        levelTask.cancel();
+        levelTask = null;
+    }
+    pendingLevels = {};
     surface = null;
 }

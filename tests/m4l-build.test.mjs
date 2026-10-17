@@ -18,12 +18,12 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
     assert.equal(script.textfile.embed, 1);
     assert.match(script.textfile.text, /function readState/);
     assert.equal(p.openinpresentation, 1);
-    assert.equal(p.devicewidth, 140, "compact device must be one-third of its original 420 width");
+    assert.equal(p.devicewidth, 240, "two level sliders sit beside the unchanged button stack");
     assert.equal(p.saved_attribute_attributes.bgcolor.expression, "themecolor.live_surface_bg");
     assert.equal(toggle.saved_attribute_attributes.activebgcolor.expression, "themecolor.live_control_bg");
     assert.equal(toggle.saved_attribute_attributes.focusbordercolor.expression, "themecolor.live_focus_frame");
     const visible = boxes.filter(b => b.presentation === 1);
-    assert.equal(visible.length, 6, "only five buttons and status should remain visible");
+    assert.equal(visible.length, 10, "five buttons, status, two sliders and their labels");
     assert.deepEqual(
         visible.filter(b => b.maxclass === "live.text")
             .sort((a, b) => a.presentation_rect[1] - b.presentation_rect[1])
@@ -33,7 +33,7 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
     assert.ok(!visible.some(b => /proof of concept|js2max|Live color switch/i.test(b.text)));
     for (const box of visible) {
         const [x, y, width, height] = box.presentation_rect;
-        assert.ok(x >= 0 && y >= 0 && x + width <= 140 && y + height <= 169,
+        assert.ok(x >= 0 && y >= 0 && x + width <= 240 && y + height <= 169,
             "all presentation content fits the compact device strip");
         assert.ok(box.fontsize >= 10 && box.fontsize <= 11, "stock-sized, readable text");
         if (box.maxclass === "comment") {
@@ -56,8 +56,8 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
     assert.ok(hasEdge(init.id, 0, script.id, 0));
     assert.ok(hasEdge(toggle.id, 0, script.id, 1));
     assert.ok(hasEdge(script.id, 0, toggle.id, 0));
-    assert.equal(script.numinlets, 6);
-    assert.equal(script.numoutlets, 6);
+    assert.equal(script.numinlets, 8);
+    assert.equal(script.numoutlets, 8);
     for (const [index, name] of ["white_keys", "scale_lighting", "playing_notes", "root_color", "clip_scale"].entries()) {
         const control = boxes.find(b => b.varname === name);
         assert.ok(hasEdge(control.id, 0, script.id, index + 1));
@@ -68,6 +68,25 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
         assert.ok(control.presentation_rect[2] >= 24 && control.presentation_rect[3] >= 24);
     }
     assert.ok(hasEdge(script.id, 5, "roli-status", 0));
+    for (const [index, name] of ["global_brightness", "background_intensity"].entries()) {
+        const slider = boxes.find(b => b.varname === name);
+        const label = boxes.find(b => b.id === `label-${name}`);
+        assert.equal(label.text, index === 0 ? "Global\nBrightness (%)" : "Background\nBrightness (%)");
+        assert.equal(label.linecount, 2);
+        assert.equal(slider.maxclass, "live.slider");
+        assert.equal(slider.orientation, 1);
+        assert.equal(slider.parameter_enable, 1, "native parameter engine owns the numeric range");
+        assert.equal(slider.saved_object_attributes.parameter_enable, 1);
+        assert.equal(slider.active, 0);
+        assert.equal(slider.saved_attribute_attributes.valueof.parameter_type, 1);
+        assert.equal(slider.saved_attribute_attributes.valueof.parameter_mmin, 0);
+        assert.equal(slider.saved_attribute_attributes.valueof.parameter_mmax, 100);
+        assert.equal(slider.saved_attribute_attributes.valueof.parameter_initial_enable, 0);
+        assert.equal(slider.saved_attribute_attributes.valueof.parameter_invisible, 2);
+        assert.ok(slider.presentation_rect[2] >= 24 && slider.presentation_rect[3] >= 24);
+        assert.ok(hasEdge(slider.id, 0, script.id, index + 6));
+        assert.ok(hasEdge(script.id, index + 6, slider.id, 0));
+    }
     assert.equal(edges.filter(e => e[0] === midiIn.id).length, 1);
     assert.equal(edges.filter(e => e[2] === midiOut.id).length, 1);
     for (const e of edges) {

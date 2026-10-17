@@ -6,12 +6,22 @@ const vm = require("node:vm");
 
 const source = readFileSync(join(__dirname, "../m4l/ROLI-Controls.js"), "utf8");
 
-function setup({ retainRemovedIds = false } = {}) {
+function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
     const outputs = [];
     const logs = [];
     const writes = [];
     const commands = [];
     const tasks = [];
+    const sliders = Object.fromEntries(["global_brightness", "background_intensity"].map(name => [
+        name, {
+            value: 0,
+            getvalueof() { return this.value; },
+            message(message, value) {
+                assert.equal(message, "set", "native range validation must not output");
+                this.value = Math.max(0, Math.min(sliderRange, value));
+            }
+        }
+    ]));
     let surfaces = [{ id: 7, white: 0, ready: 1 }];
     class LiveAPI {
         constructor(callback, path) {
@@ -31,20 +41,23 @@ function setup({ retainRemovedIds = false } = {}) {
         }
         call(name, value) {
             assert.ok(this.id, "must not call a stale surface");
-            if (name === "get_roli_controls_state_v4") {
+            if (name === "get_roli_controls_state_v5") {
                 if (this.target.error) throw new Error(this.target.error);
                 if (this.target.reply) return this.target.reply;
-                return ["roli_controls_v4", this.target.white, this.target.scale ?? 1,
+                return ["roli_controls_v5", this.target.white, this.target.scale ?? 1,
                     this.target.notes ?? 1, this.target.root ?? 1, this.target.clip ?? 0,
                     this.target.ready, this.target.settingsOk === false ? 0 : 1,
-                    this.target.source ?? (this.target.clip ? "clip" : "live")];
+                    this.target.source ?? (this.target.clip ? "clip" : "live"),
+                    this.target.brightness ?? 100, this.target.background ?? 100];
             }
             const fields = {
                 set_roli_white_keys: "white",
                 set_roli_scale_lighting: "scale",
                 set_roli_playing_notes: "notes",
                 set_roli_root_color: "root",
-                set_roli_clip_scale: "clip"
+                set_roli_clip_scale: "clip",
+                set_roli_global_brightness: "brightness",
+                set_roli_background_intensity: "background"
             };
             assert.ok(fields[name], "only known settings may be written");
             writes.push(value);
@@ -55,16 +68,18 @@ function setup({ retainRemovedIds = false } = {}) {
                 this.target[fields[name]] = value;
                 this.target.settingsOk = true;
             }
-            return this.call("get_roli_controls_state_v4");
+            return this.call("get_roli_controls_state_v5");
         }
     }
     class Task {
         constructor(fn) { this.fn = fn; tasks.push(this); }
         cancel() { this.cancelled = true; }
         repeat() { this.repeating = true; }
+        schedule(delay) { this.delay = delay; this.scheduled = true; }
     }
     const context = vm.createContext({
         LiveAPI, Task, inlet: 0,
+        patcher: { getnamed: name => sliders[name] },
         outlet: (...args) => outputs.push(args),
         post: text => logs.push(text)
     });
@@ -73,6 +88,13 @@ function setup({ retainRemovedIds = false } = {}) {
         context, outputs, logs, writes, commands, tasks,
         surfaces: value => { surfaces = value; },
         click(index = 1) { context.inlet = index; context.bang(); },
+        level(index, value) { context.inlet = index; context.msg_float(value); },
+        flush() {
+            for (const task of tasks.filter(t => t.scheduled && !t.cancelled)) {
+                task.scheduled = false;
+                task.fn();
+            }
+        },
         status() { return outputs.filter(o => o[0] === 5 && o[1] === "set").at(-1)?.[2]; },
         label(index = 0) { return outputs.filter(o => o[0] === index && o[1] === "text").at(-1)?.[2]; }
     };
@@ -177,7 +199,7 @@ test("polling rejects a removed surface even when its old API object retains a v
 
 test("accepts a generic ControlSurface only when its API advertises the bridge", () => {
     const h = setup();
-    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v4", white: 0, ready: 1 }]);
+    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v5", white: 0, ready: 1 }]);
     h.context.bang();
     assert.equal(h.status(), "Connected");
 });
@@ -219,7 +241,9 @@ test("invalid or old script replies fail explicitly before any write", () => {
     for (const reply of [
         ["roli_controls_v2", 0, 1, 1, 1, 1], ["roli_controls_v3", 1, 1, 1, 1, 1, 1],
         ["roli_controls_v4", 2, 1, 1, 1, 0, 1, 1, "live"],
-        ["roli_controls_v4", 1, 1, 1, 1, 0, 1, 1, "unknown"]
+        ["roli_controls_v4", 1, 1, 1, 1, 0, 1, 1, "unknown"],
+        ["roli_controls_v5", 1, 1, 1, 1, 0, 1, 1, "live", 101, 25],
+        ["roli_controls_v5", 1, 1, 1, 1, 0, 1, 1, "live", 100, -1]
     ]) {
         const h = setup();
         h.surfaces([{ id: 7, reply }]);
@@ -259,7 +283,7 @@ test("scale and playing-note switches are independent and preserve the saved col
     assert.equal(h.label(2), "Playing notes: ON");
     assert.equal(h.label(), "Key colors: Track");
     assert.deepEqual(h.outputs.filter(o => o[0] === 0 && o[1] === "active").at(-1), [0, "active", 0]);
-    assert.match(h.status(), /ROLI lighting restored/);
+    assert.match(h.status(), /Native colors restored/);
     h.click(3);
     assert.equal(h.label(2), "Playing notes: OFF");
     assert.equal(h.label(1), "Scale lighting: OFF");
@@ -391,4 +415,124 @@ test("failed clip setting saves never confirm a successful change", () => {
     assert.match(h.status(), /Settings were not saved/);
     assert.equal(h.label(4), "Clip scale: OFF");
     assert.deepEqual(h.commands, [["set_roli_clip_scale", 1]]);
+});
+
+test("level controls read confirmed percentages without writing on load or poll", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, white: 1, ready: 1, brightness: 61, background: 25 }]);
+    h.context.bang();
+    h.context.refresh();
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "set").at(-1), [6, "set", 61]);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 7 && o[1] === "set").at(-1), [7, "set", 25]);
+    assert.deepEqual(h.writes, []);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "active").at(-1), [6, "active", 1]);
+});
+
+test("startup slider output before live.thisdevice cannot overwrite saved levels", () => {
+    const h = setup();
+    h.level(6, 0);
+    h.level(7, 0);
+    h.flush();
+    assert.equal(h.tasks.length, 0);
+    assert.deepEqual(h.writes, []);
+    h.context.bang();
+    assert.equal(h.status(), "Connected");
+    assert.deepEqual(h.writes, []);
+});
+
+test("collapsed native slider range disables controls before any API write or polling", () => {
+    const h = setup({ sliderRange: 0 });
+    h.context.bang();
+    assert.match(h.status(), /Slider range error/);
+    assert.equal(h.tasks.length, 0);
+    assert.deepEqual(h.writes, []);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "active").at(-1), [6, "active", 0]);
+    h.level(6, 0);
+    h.flush();
+    assert.deepEqual(h.writes, []);
+});
+
+test("slider drags coalesce to the latest value and use acknowledged integer percentages", () => {
+    const h = setup();
+    h.context.bang();
+    h.level(6, 70);
+    h.level(6, 50.4);
+    h.level(7, 25);
+    assert.deepEqual(h.writes, []);
+    const task = h.tasks.find(t => t.scheduled);
+    assert.equal(task.delay, 100);
+    h.flush();
+    assert.deepEqual(h.commands, [["set_roli_global_brightness", 50], ["set_roli_background_intensity", 25]]);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "set").at(-1), [6, "set", 50]);
+    h.level(6, 50);
+    h.flush();
+    assert.equal(h.commands.length, 2, "unchanged levels must not repeatedly save preferences");
+});
+
+test("global remains active with native colors while background is disabled", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, white: 1, scale: 0, ready: 1, background: 25, source: "off" }]);
+    h.context.bang();
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "active").at(-1), [6, "active", 1]);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 7 && o[1] === "active").at(-1), [7, "active", 0]);
+    h.level(6, 40);
+    h.flush();
+    assert.deepEqual(h.commands, [["set_roli_global_brightness", 40]]);
+});
+
+test("unknown hardware brightness is not replaced by the slider's startup value", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, white: 1, ready: 0, brightness: -1, background: 25 }]);
+    h.context.bang();
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "set"), []);
+    assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "active").at(-1), [6, "active", 0]);
+    h.level(6, 0);
+    h.flush();
+    assert.equal(h.status(), "Disconnected");
+    assert.deepEqual(h.writes, []);
+});
+
+test("queued slider writes rediscover the surface and reject removal", () => {
+    const h = setup({ retainRemovedIds: true });
+    h.context.bang();
+    h.level(6, 40);
+    h.surfaces([]);
+    h.flush();
+    assert.equal(h.status(), "Disconnected");
+    assert.deepEqual(h.writes, []);
+});
+
+test("slider save failures and rejected values never look like acknowledged changes", () => {
+    for (const failure of [{ failSave: true }, { reject: true }]) {
+        const h = setup();
+        h.surfaces([{ id: 7, white: 1, ready: 1, ...failure }]);
+        h.context.bang();
+        h.level(7, 25);
+        h.flush();
+        assert.match(h.status(), /not saved|did not accept/);
+        assert.deepEqual(h.outputs.filter(o => o[0] === 7 && o[1] === "active").at(-1), [7, "active", 0]);
+        assert.deepEqual(h.commands, [["set_roli_background_intensity", 25]]);
+    }
+});
+
+test("invalid numeric events never queue a slider write", () => {
+    const h = setup();
+    h.context.bang();
+    for (const value of [-1, 101, NaN, Infinity, "25", null]) {
+        h.level(6, value);
+        assert.match(h.status(), /Invalid brightness input/);
+    }
+    h.flush();
+    assert.deepEqual(h.writes, []);
+});
+
+test("deleting the device cancels deferred level writes", () => {
+    const h = setup();
+    h.context.bang();
+    h.level(6, 40);
+    const task = h.tasks.find(t => t.scheduled);
+    h.context.notifydeleted();
+    assert.equal(task.cancelled, true);
+    h.flush();
+    assert.deepEqual(h.writes, []);
 });

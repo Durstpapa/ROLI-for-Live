@@ -5,6 +5,16 @@
 **Status:** implementation specification, not a tested implementation  
 **Project identity:** an independent, community-maintained integration, not an official Ableton or ROLI product
 
+**Current fork hardware scope (2026-10-17):** describe this as **ROLI for Live — ROLI Piano
+integration**, not a general ROLI controller integration. Piano 49 is hardware-tested.
+Piano M is the renamed LUMI Keys, not a separate hardware target. Its existing LUMI Keys
+profile is experimental and has not been hardware-tested. Lightpad and Seaboard integration is
+out of scope; a Lightpad used for bend/modulation must be configured separately through
+normal MIDI routing, not assigned as this control surface's Piano port. Existing script,
+device and repository names remain unchanged for installation compatibility. The original
+specification below records design targets; the README compatibility matrix records
+current support.
+
 ## 1. Decision
 
 Build **one installable controller integration**, consisting of a small Python MIDI Remote Script that runs inside Ableton Live and controls ROLI lighting over the existing USB connection. Keep performance MIDI on Live's native input path. Use stock hardware lighting commands wherever they meet the requirements. Add an original, bundled, lighting-only Littlefoot program only for hardware profiles that require it.
@@ -37,7 +47,7 @@ The first release provides **Push-like scale and color guidance on a piano keybo
 | Area | First-release decision |
 |---|---|
 | Primary hardware target | ROLI Piano, 49 keys. Confirm the actual test unit before implementation. The owner's model has not been confirmed. |
-| Additional hardware | Piano M and LUMI are separate profiles, admitted only after their own tests. Never infer support from the shared brand or protocol family. |
+| Additional hardware | Piano M (formerly LUMI Keys) uses the existing experimental LUMI Keys profile; qualify it with its own hardware tests before advertising tested support. Never infer support from the shared brand or protocol family. |
 | Connection | One keyboard over USB. No Bluetooth, chained keyboards, Airwave, or DIN-only lighting control in version 1. |
 | Host | Exact tested Live 12 builds. Target Standard and Suite without Max for Live; certify other editions only after testing. A beta is not required. |
 | Operating systems | macOS and Windows, with exact OS versions and architectures listed in the release matrix. No blanket compatibility claims. |
@@ -112,6 +122,8 @@ Before implementation, capture expected snapshots for: track-only selection, a s
 ### 5.2 Lighting policy
 
 The following policy is the project's specification. Semantic resemblance to Push is the goal; identical perceived RGB output across different LED hardware is not promised.
+
+**Fork lighting levels (2026-10-16):** Add saved Global brightness and Background intensity controls. Global uses native config item 36, initially reads the hardware without overriding it, remains active with Scale lighting off, and restores captured brightness at script shutdown. Background scales background/root RGB channels only while Scale lighting is on; the user confirmed useful contrast at 25% with native playback highlights. A separate velocity-64 feedback test produced no perceptible highlight dimming, so do not expose an independent played-note brightness control. The wider native device retains the original button stack. Native slider parameter engines must stay enabled, with Hidden visibility and initialization disabled; validate 0/100 readback before enabling controls. After that correction, the user confirmed both brightness sliders work on Piano 49 / Live 12.4.15b7. Automated tests additionally cover migration, acknowledgement and restoration; not every recovery path has been separately hardware-qualified.
 
 | State | Required display |
 |---|---|
