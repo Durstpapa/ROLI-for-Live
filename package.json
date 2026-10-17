@@ -1,0 +1,11 @@
+{
+  "name": "roli-for-live-controls",
+  "private": true,
+  "scripts": {
+    "build:m4l": "node m4l/build.mjs",
+    "test:m4l": "node --test tests/m4l.test.cjs tests/m4l-build.test.mjs"
+  },
+  "devDependencies": {
+    "js2max": "1.1.2"
+  }
+}

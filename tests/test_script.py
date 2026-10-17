@@ -1,6 +1,7 @@
 """Runs ROLI_for_Live against a fake Live and a fake keyboard. Usage: py -3.11 tests/test_script.py"""
 import os
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, 'fake_live'))
@@ -115,6 +116,15 @@ def main():
     assert caps['controller_id']['vendor_id'] == 0x2AF4
 
     s = ROLI_for_Live.create_instance(object())
+    assert s.get_roli_lighting_state() == 'roli_lighting_v1 1 0'
+    for invalid in (-1, 2, 1.0, '1', None):
+        try:
+            s.set_roli_white_keys(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('invalid white keys value accepted: %r' % (invalid,))
+    assert s.get_roli_lighting_state() == 'roli_lighting_v1 1 0'
     tick(s, 60)
     assert ControlSurface.feedback_channels == [0]
     assert COMMANDS.count(blocks.CMD_BEGIN_API_MODE) == 1 and COMMANDS.count(blocks.CMD_PING) >= 3, COMMANDS
@@ -122,7 +132,27 @@ def main():
     assert DEVICE[100] == 1 and DEVICE[104] == 1, DEVICE
     assert DEVICE[102] == 1, 'pitch bend should have been enabled'
     assert DEVICE[27] == 0 and DEVICE[22] == 0
-    assert DEVICE[34] == roli_for_live._argb(0xFF3B30), hex(DEVICE[34] & 0xFFFFFFFF)
+    assert DEVICE[34] == roli_for_live._argb(0xFFFFFF), hex(DEVICE[34] & 0xFFFFFFFF)
+    assert DEVICE[35] == roli_for_live._argb(0xFF3B30)
+    assert s.get_roli_lighting_state() == 'roli_lighting_v1 1 1'
+    assert s.set_roli_white_keys(1) == 'roli_lighting_v1 1 1'
+    tick(s, 10)
+    assert DEVICE[34] == roli_for_live._argb(0xFFFFFF)
+    assert DEVICE[35] == roli_for_live._argb(0xFF3B30)
+    t1.color = 0x123456
+    tick(s, 10)
+    assert DEVICE[34] == roli_for_live._argb(0xFFFFFF)
+    assert DEVICE[35] == roli_for_live._argb(roli_for_live._visible(0x123456))
+    t1.color = 0xFF3B30
+    assert s.set_roli_white_keys(0) == 'roli_lighting_v1 0 1'
+    tick(s, 10)
+    assert DEVICE[34] == roli_for_live._argb(0xFF3B30)
+    assert DEVICE[35] == roli_for_live._argb(roli_for_live._brighter(0xFF3B30))
+    s.set_roli_white_keys(1)
+    s.set_roli_white_keys(0)
+    tick(s, 10)
+    assert DEVICE[34] == roli_for_live._argb(0xFF3B30), 'rapid toggles must cancel stale queued colors'
+    assert DEVICE[35] == roli_for_live._argb(roli_for_live._brighter(0xFF3B30))
 
     song.root_note = 2
     song.scale_intervals = [0, 2, 3, 5, 7, 8, 10]
@@ -137,6 +167,15 @@ def main():
     t2.color = 0x00FF00
     tick(s, 5)
     assert DEVICE[34] == roli_for_live._argb(0x00FF00)
+    s.set_roli_white_keys(1)
+    tick(s, 10)
+    song.view.selected_track = t1
+    tick(s, 10)
+    assert DEVICE[34] == roli_for_live._argb(0xFFFFFF)
+    assert DEVICE[35] == roli_for_live._argb(0xFF3B30)
+    s.set_roli_white_keys(0)
+    song.view.selected_track = t2
+    tick(s, 10)
 
     song.scale_intervals = [0, 1, 4, 5, 7, 8, 10]  # Phrygian Dominant: no built-in match
     tick(s, 5)
@@ -191,6 +230,7 @@ def main():
     song.current_song_time = 12.5   # past the clip
     assert ControlSurface.notes_out[-1] == (0x80, 74, 0)
     song.is_playing = False
+    s.set_roli_white_keys(1)
     s.disconnect()
     assert ControlSurface.controlled_track is None
     run_device(s)
@@ -231,7 +271,9 @@ def test_lumi():
     assert DEVICE[107] == 1 and DEVICE[111] == 1, 'mode 1 colour type / show scale'
     assert DEVICE[100] == 0 and DEVICE[104] == 0, 'mode 0 untouched'
     assert all(DEVICE[i] == 0 for i in (108, 109, 110)), 'no expression writes'
-    assert DEVICE[27] == 0 and DEVICE[22] == 0 and DEVICE[34] == roli_for_live._argb(0xFF3B30)
+    assert s.get_roli_lighting_state() == 'roli_lighting_v1 1 1', 'new script instances default to white keys'
+    assert DEVICE[27] == 0 and DEVICE[22] == 0 and DEVICE[34] == roli_for_live._argb(0xFFFFFF)
+    assert DEVICE[35] == roli_for_live._argb(0xFF3B30)
 
     s.handle_sysex(button_packet(4))
     assert song.view.selected_track is t1, 'buttons are not mapped on LUMI'
@@ -253,4 +295,7 @@ def test_lumi():
 
 
 if __name__ == '__main__':
-    main()
+    with tempfile.TemporaryDirectory() as directory:
+        roli_for_live.SNAPSHOT_PATH = os.path.join(directory, 'snapshot.json')
+        roli_for_live.SETTINGS_PATH = os.path.join(directory, 'settings.json')
+        main()

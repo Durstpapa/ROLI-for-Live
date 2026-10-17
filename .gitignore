@@ -1,5 +1,8 @@
 src/ROLI_for_Live/device_snapshot.json
+src/ROLI_for_Live/settings.json
+src/ROLI_for_Live/.roli-settings-*.tmp
 __pycache__/
 *.pyc
 tests/device_snapshot.test.json
 dist/
+node_modules/

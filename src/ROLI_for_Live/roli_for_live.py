@@ -7,6 +7,8 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import json
 import os
+import tempfile
+import time
 
 from _Framework.ControlSurface import ControlSurface
 
@@ -58,9 +60,12 @@ PROBE_INTERVAL_TICKS = 20  # update_display runs ~10 Hz
 # arrives for 5 s (roli_BlocksProtocolDefinitions.h). Ping ~1 Hz; re-enter if ACKs stop.
 PING_INTERVAL_TICKS = 10
 API_MODE_TIMEOUT_TICKS = 50
+DEVICE_RESPONSE_TIMEOUT_SECONDS = 5.0
 MIN_WRITE_INTERVAL_TICKS = 2
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device_snapshot.json')
+SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
+DEFAULT_SETTINGS = dict(white_keys=True, scale_lighting=True, playing_notes=True, root_color=True)
 
 
 def _argb(rgb):
@@ -104,19 +109,132 @@ class ROLIForLive(ControlSurface):
             self._last_write = 0
             self._last_ping = 0
             self._last_ack = None
+            self._last_response = None
             self._track = None
             self._unsupported_scale_reported = None
+            self._settings_error = False
+            self._settings = self._load_settings()
             self._playing = PlayingNotes(self._send_midi, self.log_message)
             self._add_song_listeners()
-            self.set_feedback_channels(list(PLAYING_NOTES_FEEDBACK_CHANNELS))
-            # Velocity Live uses for the echoed notes; Live's own BLOCKS script sets this too.
-            if hasattr(self._c_instance, 'set_feedback_velocity'):
-                self._c_instance.set_feedback_velocity(PLAYING_NOTES_FEEDBACK_VELOCITY)
+            self._configure_note_feedback()
             self._on_track_selected()
             from . import __version__
             self.log_message('ROLI for Live %s: started' % __version__)
 
     # ---------------------------------------------------------------- lifecycle
+
+    def get_roli_lighting_state(self):
+        """Versioned reply for the optional Max for Live controls."""
+        ready = self._keyboard_ready()
+        return 'roli_lighting_v1 %d %d' % (int(self._settings['white_keys']), int(ready))
+
+    def get_roli_controls_state(self):
+        ready = self._keyboard_ready()
+        return 'roli_controls_v2 %d %d %d %d %d' % (
+            int(self._settings['white_keys']), int(self._settings['scale_lighting']),
+            int(self._settings['playing_notes']), int(ready), int(not self._settings_error))
+
+    def get_roli_controls_state_v3(self):
+        ready = self._keyboard_ready()
+        return 'roli_controls_v3 %d %d %d %d %d %d' % (
+            int(self._settings['white_keys']), int(self._settings['scale_lighting']),
+            int(self._settings['playing_notes']), int(self._settings['root_color']),
+            int(ready), int(not self._settings_error))
+
+    def _keyboard_ready(self):
+        return (self._serial is not None and self._snapshot is not None and self._mode is not None
+                and self._last_response is not None
+                and time.monotonic() - self._last_response <= DEVICE_RESPONSE_TIMEOUT_SECONDS)
+
+    def set_roli_white_keys(self, value):
+        self._set_setting('white_keys', value)
+        return self.get_roli_lighting_state()
+
+    def set_roli_scale_lighting(self, value):
+        self._set_setting('scale_lighting', value)
+        return self.get_roli_controls_state()
+
+    def set_roli_playing_notes(self, value):
+        self._set_setting('playing_notes', value)
+        return self.get_roli_controls_state()
+
+    def set_roli_root_color(self, value):
+        self._set_setting('root_color', value)
+        return self.get_roli_controls_state_v3()
+
+    def _set_setting(self, name, value):
+        if type(value) is not int or value not in (0, 1):
+            self.log_message('ROLI for Live: rejected %s value %r' % (name, value))
+            raise ValueError('%s must be 0 or 1' % name)
+        updated = dict(self._settings)
+        updated[name] = bool(value)
+        self._save_settings(updated)
+        self._settings = updated
+        if name == 'playing_notes':
+            self._configure_note_feedback(clear=not bool(value))
+        self._update_lighting()
+        self.log_message('ROLI for Live: saved %s %s' % (name, 'on' if value else 'off'))
+
+    def _settings_failure(self, action, error):
+        self._settings_error = True
+        message = 'ROLI for Live: could not %s settings: %s' % (action, error)
+        self.log_message(message)
+        self.show_message(message)
+
+    def _load_settings(self):
+        try:
+            with open(SETTINGS_PATH) as file:
+                stored = json.load(file)
+            if (not isinstance(stored, dict) or type(stored.get('version')) is not int
+                    or stored['version'] not in (1, 2)):
+                raise ValueError('Invalid settings schema or version')
+            fields = set(DEFAULT_SETTINGS)
+            if stored['version'] == 1:
+                fields.remove('root_color')
+            if (set(stored) != fields | {'version'}
+                    or any(type(stored[name]) is not bool for name in fields)):
+                raise ValueError('Invalid settings schema or version')
+            settings = dict(DEFAULT_SETTINGS)
+            settings.update((name, stored[name]) for name in fields)
+            return settings
+        except FileNotFoundError:
+            return dict(DEFAULT_SETTINGS)
+        except (OSError, ValueError) as error:
+            self._settings_failure('read', error)
+            return dict(DEFAULT_SETTINGS)
+
+    def _save_settings(self, settings):
+        temporary = None
+        try:
+            fd, temporary = tempfile.mkstemp(prefix='.roli-settings-', suffix='.tmp',
+                                             dir=os.path.dirname(SETTINGS_PATH))
+            with os.fdopen(fd, 'w') as file:
+                json.dump(dict(settings, version=2), file, sort_keys=True)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary, SETTINGS_PATH)
+            temporary = None
+            self._settings_error = False
+        except OSError as error:
+            self._settings_failure('save', error)
+            raise
+        finally:
+            if temporary is not None:
+                try:
+                    os.remove(temporary)
+                except OSError as error:
+                    self.log_message('ROLI for Live: could not remove temporary settings: %s' % error)
+
+    def _configure_note_feedback(self, clear=False):
+        enabled = self._settings['playing_notes']
+        self._playing.set_enabled(enabled)
+        self.set_feedback_channels(list(PLAYING_NOTES_FEEDBACK_CHANNELS) if enabled else [])
+        if hasattr(self._c_instance, 'set_feedback_velocity'):
+            self._c_instance.set_feedback_velocity(PLAYING_NOTES_FEEDBACK_VELOCITY if enabled else 0)
+        if clear and self._serial is not None:
+            # Clear notes echoed by Live itself, not just the clip notes tracked by PlayingNotes.
+            for pitch in range(128):
+                self._send_midi((0x80, pitch, 0))
 
     def disconnect(self):
         self._restore_snapshot()
@@ -140,13 +258,20 @@ class ROLIForLive(ControlSurface):
         self._mode = None
         self._device_config = {}
         self._sent = {}
+        self._pending = {}
+        self._snapshot = None
         self._expression_checked = False
         self._last_probe = -PROBE_INTERVAL_TICKS
         self._last_ack = None
+        self._last_response = None
 
     def update_display(self):
         super(ROLIForLive, self).update_display()
         self._ticks += 1
+        if (self._serial is not None and self._last_response is not None
+                and time.monotonic() - self._last_response > DEVICE_RESPONSE_TIMEOUT_SECONDS):
+            self.log_message('ROLI for Live: keyboard stopped responding; waiting for reconnection')
+            self._reset_device_state()
         self._playing.update(self.song())
         if self._serial is None:
             if self._ticks - self._last_probe >= PROBE_INTERVAL_TICKS:
@@ -177,6 +302,9 @@ class ROLIForLive(ControlSurface):
             if not self._expression_checked:
                 self._ensure_expression()
             self._update_lighting()
+        if self._ticks - self._last_probe >= PROBE_INTERVAL_TICKS:
+            self._last_probe = self._ticks
+            self._send_midi(blocks.config_request(MODE))
         self._flush()
 
     # ---------------------------------------------------------------- device I/O
@@ -189,12 +317,16 @@ class ROLIForLive(ControlSurface):
                 if profile is not None:
                     self._serial = serial
                     self._profile = profile
+                    self._last_response = time.monotonic()
                     self.log_message('ROLI for Live: found %s (%s...)' % (profile['name'], serial[:3]))
                     self._last_probe = -PROBE_INTERVAL_TICKS
                 else:
                     self.log_message('ROLI for Live: unsupported ROLI device %s..., staying idle' % serial[:3])
                 return
+        if self._serial is None:
+            return
         for event in blocks.parse_device_packet(midi_bytes):
+            self._last_response = time.monotonic()
             if event[0] == 'ack':
                 self._last_ack = self._ticks
             elif event[0] == 'config':
@@ -248,6 +380,8 @@ class ROLIForLive(ControlSurface):
     def _write(self, item, value):
         if self._sent.get(item) != value:
             self._pending[item] = value
+        else:
+            self._pending.pop(item, None)
 
     def _flush(self):
         if not self._pending or self._ticks - self._last_write < MIN_WRITE_INTERVAL_TICKS:
@@ -315,6 +449,10 @@ class ROLIForLive(ControlSurface):
     def _update_lighting(self):
         if self._serial is None or self._snapshot is None or self._mode is None:
             return
+        if not self._settings['scale_lighting']:
+            for item, value in self._snapshot.items():
+                self._write(item, value)
+            return
         song = self.song()
         root = int(getattr(song, 'root_note', 0)) % 12
         scale_on = bool(getattr(song, 'scale_mode', True))
@@ -335,8 +473,10 @@ class ROLIForLive(ControlSurface):
         self._write(mode_item(self._mode, _SHOW_SCALE), 1 if scale_on else 0)
         self._write(KEY, root)
         self._write(SCALE, index)
-        self._write(GLOBAL_KEY_COLOUR, _argb(color))
-        self._write(ROOT_KEY_COLOUR, _argb(_brighter(color)))
+        key_color = 0xFFFFFF if self._settings['white_keys'] else color
+        root_color = color if self._settings['white_keys'] else _brighter(color)
+        self._write(GLOBAL_KEY_COLOUR, _argb(key_color))
+        self._write(ROOT_KEY_COLOUR, _argb(root_color if self._settings['root_color'] else key_color))
 
     def _track_color(self):
         track = self._track

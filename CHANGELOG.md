@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased (fork)
+
+- Use a real elapsed-time deadline for keyboard readiness even if Live suspends display
+  callbacks, and rediscover the active surface on every device poll to reject stale IDs.
+- Show neutral **Disconnected** status when the ROLI surface is missing or the keyboard
+  stops responding, without assuming a power, cable, or MIDI issue. Reconnect automatically.
+- Order controls as Scale lighting, Key colors, Root color, Playing notes. Expire
+  keyboard readiness after roughly five seconds without real replies, probe liveness,
+  and reinitialize lighting after reconnection without resetting saved choices.
+- Add independent saved **Root color** control. Off makes roots match other lit keys
+  in both color modes, without darkening or disabling them. Existing three-setting
+  preference files migrate without resetting their values.
+- Save global color, scale-lighting, and playing-note preferences beside the script in
+  `settings.json`, with atomic writes and explicit read/save errors.
+- Add independent Scale lighting and Playing notes controls; Scale lighting off restores
+  captured pre-script lighting without changing navigation or MPE. Playing notes off
+  disables both feedback paths and clears outstanding feedback notes.
+- Rename the color button to **Key colors: White / Track** and retain compact native styling.
+- Compact Max device layout at one-third of the original width, with native Live theme
+  colors, stock-sized text, and no duplicated title/development credits.
+- Default to white keys with track-colored roots on script startup, including when no
+  Max device is loaded. The live button can still switch to the original track colors.
+- Fix repeated color-switch clicks re-sending on: the Max button now inverts confirmed
+  Python state instead of relying on the widget's local toggle value.
+- Experimental code-first Max for Live **ROLI Controls** device: switch live between
+  track colors and white keys with track-colored roots, without restarting Live.
+- Versioned Python control-surface bridge, acknowledged UI state, explicit connection
+  errors, and direct MIDI pass-through outside JavaScript.
+- Automated simulated keyboard, JavaScript bridge, and generated-device structural tests.
+- Requires Max 9. Device loading and live switching between both schemes, including
+  following selected-track root colors, verified on macOS with Live 12.4.15b7 and
+  a ROLI Piano 49 (2026-10-16).
+
 ## v0.1.1
 
 Fixes the Mac installer.

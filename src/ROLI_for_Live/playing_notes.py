@@ -44,6 +44,12 @@ class PlayingNotes(object):
         self._notes = []
         self._notes_cb = None
         self._lit = set()
+        self._enabled = True
+
+    def set_enabled(self, enabled):
+        self._enabled = enabled
+        if not enabled:
+            self.disconnect()
 
     def set_track(self, track):
         if track != self._track:
@@ -61,6 +67,8 @@ class PlayingNotes(object):
         self._lit = set()
 
     def update(self, song):
+        if not self._enabled:
+            return
         clip, pos = self._playing_clip(song)
         if clip != self._clip:  # Live returns a fresh wrapper per access; compare by value
             self._set_clip(clip)
