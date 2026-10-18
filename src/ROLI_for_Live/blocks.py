@@ -13,6 +13,7 @@ MSG_DEVICE_COMMAND = 0x01
 MSG_CONFIG = 0x10
 # Device commands
 CMD_BEGIN_API_MODE = 0x00
+CMD_END_API_MODE = 0x02
 CMD_PING = 0x03
 # Config commands
 CFG_SET = 0x00

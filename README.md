@@ -39,7 +39,7 @@ integration.** See the [compatibility matrix](#compatibility).
 | ✨ **Playing notes** | Keys light white as the selected track's clip plays (Session and Arrangement). |
 | ⏮️⏭️ **Track buttons** | The keyboard's `<` / `>` buttons select the previous/next track. |
 | 🎹 **Native MPE** | Per-note pitch bend and pressure go straight into Live; the script never touches your notes. If the keyboard's bend/pressure are switched off, it turns them on. |
-| ↩️ **Leaves no trace** | Your keyboard's own light settings come back when Live closes. |
+| ↩️ **Native lighting handoff** | Requests restoration of captured lighting settings when Live closes, then releases API mode on Piano 49. Automatic native-lighting return is user-confirmed on Piano 49. |
 
 ### What this fork adds
 
@@ -125,7 +125,13 @@ pitch bend range to **48** to match the keyboard.
 
 ## Optional live controls (experimental)
 
-The code-first **ROLI Controls** Max for Live device provides five buttons and two sliders:
+The code-first **ROLI Controls** Max for Live Audio Effect provides five buttons and two sliders.
+It passes stereo audio straight through without processing, and can sit on the Master/Main
+track inside an Audio Effect Rack with your other default devices. Its controls operate
+globally; scale and playing-note lighting still follow the selected MIDI track, not the
+track holding the device.
+
+The controls are:
 
 | Control | Behavior |
 |---|---|
@@ -154,9 +160,15 @@ experimental fork feature, not included in the upstream release downloads.
    npm run test:m4l
    ```
 3. Start Live with the ROLI control surface enabled. Drag
-   `dist/m4l/ROLI Controls.amxd` onto a MIDI track, before any instrument.
+   `dist/m4l/ROLI Controls.amxd` onto the Master/Main track, an audio track, or a MIDI
+   track after its instrument. It can be grouped with other audio effects in an Audio
+   Effect Rack. Save the rack in your default Live Set to load it with new projects.
 4. Wait for **Connected**, then use the buttons and sliders. No script reinstall or Live restart
    is needed for subsequent changes.
+
+If upgrading from the MIDI Effect version, remove that instance and load the newly built
+Audio Effect instead; existing Sets and saved racks retain their embedded older device.
+Your saved lighting preferences remain unchanged.
 
 ### Following a playing clip
 
@@ -288,8 +300,8 @@ White highlights may be difficult to distinguish when Key colors is White; use T
 colors and a playing MIDI clip to see the difference clearly. Pressing the keys by hand
 does not isolate this feedback: the Piano's native touch/pressure lighting continues
 regardless of this switch. Root-note coloring has its own Root color control.
-The device's MIDI input is wired directly to MIDI output; performance MIDI does not pass
-through JavaScript. Per-Set recall and automation are not implemented.
+The Audio Effect passes stereo audio directly through; performance MIDI stays on the
+keyboard's normal Live input routing. Per-Set recall and automation are not implemented.
 
 **Background contrast hardware result:** The user confirmed 25% background RGB provides
 useful contrast with native playback highlights at feedback velocity 127 on Piano 49 /
@@ -313,8 +325,8 @@ needed to change test constants.
 Source: [`m4l/ROLI-Controls.js`](m4l/ROLI-Controls.js), with a generated Max patch/device
 from pinned third-party [js2max](https://github.com/ktamas77/js2max). The
 [`build script`](m4l/build.mjs) adds compact theme-aware controls and text status, disables
-Max parameter recall (preferences live in the Python script), and replaces
-the compiler's JavaScript MIDI routing with direct MIDI pass-through. No visual patch
+Max parameter recall (preferences live in the Python script), and wires
+direct stereo audio pass-through outside JavaScript. No visual patch
 editing is required. Automated mocks/structural checks do **not** establish that the
 device loads or that custom control-surface calls work in a real Live session; verify
 those in a blank Set before relying on it.
@@ -339,6 +351,19 @@ playback highlight can be subtle against full-intensity white base keys; lower B
 Brightness to improve the contrast.
 
 ### Troubleshooting
+
+**Shutdown lighting:** A user reported that script colors could remain after quitting
+Live until switching native hardware modes (2026-10-17). Shutdown now stops lighting
+updates and note feedback before sending the captured lighting settings, then explicitly
+ends BLOCKS API mode on Piano 49. LUMI/Piano M does not enter API mode and receives only
+the restoration writes. No native mode switch is forced and saved lighting preferences
+are unchanged. Logs describe requests, not verified hardware restoration; rejected
+restore sends retain the recovery snapshot. The user confirmed native lighting returns
+automatically on Piano 49 / Live 12.4.15b7 after quitting with Scale lighting left ON
+(2026-10-17); turning it off manually before quitting is not required on that tested
+setup. LUMI/Piano M shutdown restoration and crash/power-loss recovery are not covered
+by that confirmation. This change cannot reconstruct native settings already altered;
+restore those in Dashboard with Live closed.
 
 | What you see | What to check |
 |---|---|

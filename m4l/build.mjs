@@ -11,19 +11,21 @@ export async function build() {
     const p = patch.patcher;
     const boxes = p.boxes.map(({ box }) => box);
     const script = boxes.find(box => box.text === "v8");
-    const midiIn = boxes.find(box => box.text === "midiin");
-    const midiOut = boxes.find(box => box.text === "midiout");
+    const audioIn = boxes.find(box => box.text === "plugin~");
+    const audioOut = boxes.find(box => box.text === "plugout~");
     const controls = boxes.filter(box => box.maxclass === "live.text");
     const sliders = boxes.filter(box => box.maxclass === "live.slider");
-    if (!script || !midiIn || !midiOut || controls.length !== 5 || sliders.length !== 2) {
+    if (!script || !audioIn || !audioOut || controls.length !== 5 || sliders.length !== 2) {
         throw new Error("Unexpected js2max template; cannot safely wire controls");
     }
     p.boxes = p.boxes.filter(({ box }) => box.maxclass !== "comment");
 
-    // Keep all performance MIDI out of JavaScript, including MPE and SysEx.
+    // Keep stereo audio at unity gain, outside JavaScript and the control bridge.
     p.lines = p.lines.filter(({ patchline }) =>
-        patchline.source[0] !== midiIn.id && patchline.destination[0] !== midiOut.id);
-    p.lines.push({ patchline: { source: [midiIn.id, 0], destination: [midiOut.id, 0] } });
+        patchline.source[0] !== audioIn.id && patchline.destination[0] !== audioOut.id);
+    for (let channel = 0; channel < 2; channel++) {
+        p.lines.push({ patchline: { source: [audioIn.id, channel], destination: [audioOut.id, channel] } });
+    }
     const names = ["white_keys", "scale_lighting", "playing_notes", "root_color", "clip_scale"];
     const presentationOrder = ["scale_lighting", "white_keys", "root_color", "playing_notes", "clip_scale"];
     const annotations = [
@@ -118,7 +120,7 @@ export async function build() {
     };
     await mkdir(outputDir, { recursive: true });
     await writeFile(`${outputDir}/ROLI Controls.maxpat`, JSON.stringify(patch, null, 2));
-    await writeFile(`${outputDir}/ROLI Controls.amxd`, buildAmxd(patch, "midi-effect", "ROLI Controls.amxd"));
+    await writeFile(`${outputDir}/ROLI Controls.amxd`, buildAmxd(patch, "audio-effect", "ROLI Controls.amxd"));
     return patch;
 }
 

@@ -66,6 +66,78 @@ class SurfaceTestCase(unittest.TestCase):
 
 
 class SettingsTests(SurfaceTestCase):
+    def test_shutdown_restores_lighting_then_releases_api_without_changing_mode_or_preferences(self):
+        surface, instance = self.create()
+        tick(surface, 60)
+        surface.set_roli_white_keys(0)
+        surface.set_roli_background_intensity(25)
+        surface.set_roli_global_brightness(40)
+        tick(surface, 10)
+        surface.set_roli_white_keys(1)
+        saved = self.read_settings()
+        self.assertTrue(surface._pending)
+        ControlSurface.sent[:] = []
+        with patch.object(surface, 'release_controlled_track',
+                          side_effect=lambda: surface._on_track_selected()):
+            surface.disconnect()
+        messages = list(ControlSurface.sent)
+        self.assertEqual(messages, [
+            blocks.config_set(item, value) for item, value in surface._snapshot.items()
+        ] + [blocks.device_command(blocks.CMD_END_API_MODE)])
+        self.assertEqual(surface._pending, {})
+        self.assertEqual(ControlSurface.feedback_channels, [])
+        self.assertEqual(instance.velocity, 0)
+        self.assertEqual(self.read_settings(), saved)
+        fake.run_device(surface)
+        self.assert_original_lighting()
+        self.assertEqual(DEVICE[20], self.original[20], 'never cycle native playing modes')
+        surface.update_display()
+        surface._update_lighting()
+        surface.handle_sysex(fake.config_packet(20, 1))
+        surface.disconnect()
+        self.assertEqual(ControlSurface.sent, [], 'no writes or API re-entry after shutdown')
+        self.assertFalse(any('restored keyboard lighting' in log for log in ControlSurface.logs))
+
+    def test_shutdown_leaves_non_api_lumi_profile_in_native_control(self):
+        fake.SERIAL_REPLY = fake.serial_reply(b'LKB000000000TEST')
+        surface, instance = self.create()
+        tick(surface, 60)
+        ControlSurface.sent[:] = []
+        surface.disconnect()
+        self.assertEqual(ControlSurface.sent, [
+            blocks.config_set(item, value) for item, value in surface._snapshot.items()
+        ])
+
+    def test_failed_shutdown_restore_send_retains_recovery_snapshot(self):
+        surface, instance = self.create()
+        tick(surface, 60)
+        original_send = surface._send_midi
+
+        def send(message, optimized=True):
+            if message == blocks.config_set(roli_for_live.GLOBAL_KEY_COLOUR, self.original[34]):
+                return False
+            return original_send(message, optimized)
+
+        with patch.object(surface, '_send_midi', side_effect=send):
+            surface.disconnect()
+        self.assertTrue(os.path.exists(roli_for_live.SNAPSHOT_PATH))
+        self.assertTrue(any('restore send failed' in log for log in ControlSurface.logs))
+        self.assertIn(blocks.device_command(blocks.CMD_END_API_MODE), ControlSurface.sent)
+
+    def test_failed_api_release_is_logged(self):
+        surface, instance = self.create()
+        tick(surface, 60)
+        original_send = surface._send_midi
+
+        def send(message, optimized=True):
+            if message == blocks.device_command(blocks.CMD_END_API_MODE):
+                return False
+            return original_send(message, optimized)
+
+        with patch.object(surface, '_send_midi', side_effect=send):
+            surface.disconnect()
+        self.assertTrue(any('could not send end API mode' in log for log in ControlSurface.logs))
+
     def test_missing_file_uses_explicit_defaults_without_rewriting(self):
         surface, instance = self.create()
         self.assertEqual(surface.get_roli_controls_state(), 'roli_controls_v2 1 1 1 0 1')

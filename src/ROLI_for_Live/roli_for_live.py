@@ -107,6 +107,7 @@ class ROLIForLive(ControlSurface):
     def __init__(self, c_instance):
         super(ROLIForLive, self).__init__(c_instance)
         with self.component_guard():
+            self._disconnecting = False
             self._serial = None
             self._profile = None
             self._mode = None
@@ -301,11 +302,23 @@ class ROLIForLive(ControlSurface):
                 self._send_midi((0x80, pitch, 0))
 
     def disconnect(self):
-        self._restore_snapshot()
-        self.release_controlled_track()
-        self._playing.disconnect()
+        if self._disconnecting:
+            return
+        self._disconnecting = True
+        self._pending = {}
         self._remove_song_listeners()
         self._set_track(None)
+        self.release_controlled_track()
+        self.set_feedback_channels([])
+        if hasattr(self._c_instance, 'set_feedback_velocity'):
+            self._c_instance.set_feedback_velocity(0)
+        self._playing.disconnect()
+        self._restore_snapshot()
+        if self._serial is not None and self._profile['api_mode']:
+            if self._send_midi(blocks.device_command(blocks.CMD_END_API_MODE)):
+                self.log_message('ROLI for Live: requested native keyboard control (end API mode)')
+            else:
+                self.log_message('ROLI for Live: could not send end API mode')
         super(ROLIForLive, self).disconnect()
 
     def port_settings_changed(self):
@@ -330,6 +343,8 @@ class ROLIForLive(ControlSurface):
         self._last_response = None
 
     def update_display(self):
+        if self._disconnecting:
+            return
         super(ROLIForLive, self).update_display()
         self._ticks += 1
         if (self._serial is not None and self._last_response is not None
@@ -376,6 +391,8 @@ class ROLIForLive(ControlSurface):
     # ---------------------------------------------------------------- device I/O
 
     def handle_sysex(self, midi_bytes):
+        if self._disconnecting:
+            return
         if self._serial is None:
             serial = blocks.parse_serial(midi_bytes)
             if serial is not None:
@@ -493,13 +510,21 @@ class ROLIForLive(ControlSurface):
     def _restore_snapshot(self):
         if not self._snapshot or self._serial is None:
             return
+        sent = True
         for item, value in self._snapshot.items():
-            self._send_midi(blocks.config_set(item, value))
+            if not self._send_midi(blocks.config_set(item, value)):
+                sent = False
+                self.log_message('ROLI for Live: could not send lighting restore item %d' % item)
+        if not sent:
+            self.show_message('ROLI for Live: lighting restore send failed; recovery snapshot retained')
+            return
         try:
             os.remove(SNAPSHOT_PATH)
-        except OSError:
+        except FileNotFoundError:
             pass
-        self.log_message('ROLI for Live: restored keyboard lighting')
+        except OSError as error:
+            self.log_message('ROLI for Live: could not remove lighting snapshot: %s' % error)
+        self.log_message('ROLI for Live: sent lighting restore request (hardware result unverified)')
 
     # ---------------------------------------------------------------- expression
 
@@ -553,7 +578,7 @@ class ROLIForLive(ControlSurface):
         return state
 
     def _update_lighting(self):
-        if self._serial is None or self._snapshot is None or self._mode is None:
+        if self._disconnecting or self._serial is None or self._snapshot is None or self._mode is None:
             return
         if self._settings['global_brightness'] is not None:
             self._write(BRIGHTNESS, self._settings['global_brightness'])
@@ -629,6 +654,8 @@ class ROLIForLive(ControlSurface):
         self._listeners = []
 
     def _on_track_selected(self):
+        if self._disconnecting:
+            return
         track = self.song().view.selected_track
         self._set_track(track)
         self._playing.set_track(track)

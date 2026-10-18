@@ -1,4 +1,4 @@
-// @device midi-effect
+// @device audio-effect
 // @ui live.text "Key colors" trigger inlet=1
 // @ui live.text "Scale lighting" trigger inlet=2
 // @ui live.text "Playing notes" trigger inlet=3

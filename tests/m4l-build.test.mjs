@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { build, outputDir } from "../m4l/build.mjs";
 
-test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed UI state", async () => {
+test("generated audio effect embeds JS, passes stereo audio directly, and wires confirmed UI state", async () => {
     const patch = await build();
     const p = patch.patcher;
     const boxes = p.boxes.map(({ box }) => box);
     const script = boxes.find(b => b.text === "v8");
-    const midiIn = boxes.find(b => b.text === "midiin");
-    const midiOut = boxes.find(b => b.text === "midiout");
+    const audioIn = boxes.find(b => b.text === "plugin~");
+    const audioOut = boxes.find(b => b.text === "plugout~");
     const toggle = boxes.find(b => b.varname === "white_keys");
     const init = boxes.find(b => b.text === "live.thisdevice");
     const edges = p.lines.map(({ patchline: l }) => [...l.source, ...l.destination]);
@@ -52,7 +52,12 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
     assert.equal(toggle.mode, 0, "momentary clicks must invert script state, not widget state");
     assert.equal(toggle.parameter_enable, 0, "POC must not restore a stale saved preference");
     assert.ok(toggle.presentation_rect[2] >= 24 && toggle.presentation_rect[3] >= 24);
-    assert.ok(hasEdge(midiIn.id, 0, midiOut.id, 0));
+    assert.ok(!boxes.some(b => b.text === "midiin" || b.text === "midiout"));
+    assert.equal(audioIn.numoutlets, 2);
+    assert.deepEqual(audioIn.outlettype, ["signal", "signal"]);
+    assert.equal(audioOut.numinlets, 2);
+    assert.ok(hasEdge(audioIn.id, 0, audioOut.id, 0), "left audio passes through unchanged");
+    assert.ok(hasEdge(audioIn.id, 1, audioOut.id, 1), "right audio passes through unchanged");
     assert.ok(hasEdge(init.id, 0, script.id, 0));
     assert.ok(hasEdge(toggle.id, 0, script.id, 1));
     assert.ok(hasEdge(script.id, 0, toggle.id, 0));
@@ -89,8 +94,8 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
         assert.ok(hasEdge(slider.id, 0, script.id, index + 6));
         assert.ok(hasEdge(script.id, index + 6, slider.id, 0));
     }
-    assert.equal(edges.filter(e => e[0] === midiIn.id).length, 1);
-    assert.equal(edges.filter(e => e[2] === midiOut.id).length, 1);
+    assert.equal(edges.filter(e => e[0] === audioIn.id).length, 2, "no audio processing or extra signal paths");
+    assert.equal(edges.filter(e => e[2] === audioOut.id).length, 2, "no mixed or generated audio");
     for (const e of edges) {
         const from = boxes.find(b => b.id === e[0]);
         const to = boxes.find(b => b.id === e[2]);
@@ -100,7 +105,7 @@ test("generated device embeds JS, bypasses it for all MIDI, and wires confirmed 
 
     const bytes = await readFile(`${outputDir}/ROLI Controls.amxd`);
     assert.equal(bytes.toString("ascii", 0, 4), "ampf");
-    assert.equal(bytes.toString("ascii", 8, 12), "mmmm");
+    assert.equal(bytes.toString("ascii", 8, 12), "aaaa", "Live must recognize a Max Audio Effect");
     assert.equal(bytes.toString("ascii", 24, 28), "ptch");
     assert.equal(bytes.readUInt32LE(28), bytes.length - 32);
     assert.equal(bytes.toString("ascii", 32, 36), "mx@c");

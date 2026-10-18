@@ -2,6 +2,18 @@
 
 ## Unreleased (fork)
 
+- Stop lighting callbacks and note feedback before shutdown restoration; explicitly
+  release Piano 49 BLOCKS API mode after restoring captured settings, without cycling
+  native modes or changing saved preferences. Report unverified restoration requests
+  honestly and retain the recovery snapshot on rejected restore sends. Add shutdown
+  ordering, reentry, LUMI, and failure-path regressions. User confirmed native lighting
+  returns automatically on Piano 49 / Live 12.4.15b7 when quitting with Scale lighting
+  left ON (2026-10-17). LUMI shutdown and crash recovery are not hardware-qualified by
+  this test.
+- Change ROLI Controls to a Max Audio Effect with direct stereo passthrough so it can
+  live on the Master/Main track inside an Audio Effect Rack. Keep the global controls
+  and selected-track lighting behavior unchanged. Add audio routing and device-type
+  regression checks; existing MIDI Effect instances must be replaced with the new build.
 - Set native slider double-click reset values to Global Brightness 100% and Background
   Brightness 25%, keeping initialization disabled so loading the device does not
   overwrite saved preferences. Add generated-device regression assertions.
