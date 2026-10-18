@@ -2,6 +2,37 @@
 
 ## Unreleased (fork)
 
+- Combine connection and scale/error status on one 10-point line, vertically centering
+  the text and connection dot together in the full-width footer. Remove the separate
+  connection text object; preserve complete annotations and connection-state semantics.
+  Raise the dot one layout unit relative to the text-box center for optical alignment
+  with the visible letters, based on the user's Live screenshot. User confirmed the
+  revised alignment in Live (2026-10-18).
+- Give the connection dot and connection label a dedicated row, adjusting the dot's
+  vertical placement. Combine scale source, Chromatic/Scale mode OFF state and clip
+  fallback reason in the full-width row below. Retain explicit source errors and full
+  annotations; distinguish an unconfirmed connection from an explicit disconnection.
+- Give status messages a full-width bottom strip across all three columns, expanding
+  text width from 114 to 350 units and restoring consistent 10-point text. Combine
+  connection and scale source on the first line, with detail on the second and full
+  status text retained in the annotation. Move the lower
+  brightness section up, shorten column dividers and span the status divider across
+  the device without changing device size, control text sizes or bridge behavior.
+- Add independent **Pitch bend** and **Pressure** native switches in a separate Expression
+  column (376-unit device width). Save both choices with schema 6, default them ON to
+  preserve prior behavior, and expose preferences/profile support through bridge v8
+  while retaining older replies. Keep MPE enabled, performance MIDI unfiltered, and
+  expression independent of lighting and palette. Leave Piano M/LUMI expression untouched.
+- Capture native MPE, pitch-bend and pressure settings for restoration on shutdown and
+  mode changes. Extend legacy snapshots with currently observed expression values
+  without replacing lighting recovery data. Scale lighting OFF restores lighting only.
+  Add simulated-host coverage for independent toggles, migrations, cancellation,
+  reconnection, restoration, rejected saves, capability gating and duplicate devices;
+  hardware qualification of the new OFF states remains pending.
+- Report **Live Scale mode OFF / Chromatic** or **Clip Scale mode OFF / Chromatic**
+  when the active source disables Scale mode. Retain explicit clip-fallback errors and
+  native-lighting status. Add a v7 bridge flag for the effective source's Scale mode
+  without changing older bridge replies or hardware lighting behavior.
 - Reduce status text to 9 points while retaining 10-point controls. Add a non-clickable,
   theme-accent connection dot driven by reported keyboard readiness, with a neutral
   unconfirmed/disconnected state and explicit status/error text retained.

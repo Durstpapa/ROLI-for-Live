@@ -49,7 +49,7 @@ PLAYING_NOTES_FEEDBACK_VELOCITY = 127
 # Supported keyboards by serial prefix (roli_BlocksProtocolDefinitions.h). Anything else stays idle.
 #   api_mode:   hold BLOCKS API mode (the keyboard only reports its buttons in API mode)
 #   buttons:    map < / > (button ids verified on hardware) to previous/next track
-#   expression: turn on MPE pitch bend / pressure in the active mode if they're off
+#   expression: configure native MPE pitch bend / pressure in the active mode
 PROFILES = {
     'RP4': dict(name='ROLI Piano 49', api_mode=True, buttons=True, expression=True),
     # Experimental, not tested on hardware: lights only. Same protocol and config items as the
@@ -69,7 +69,8 @@ MIN_WRITE_INTERVAL_TICKS = 2
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device_snapshot.json')
 SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
 DEFAULT_SETTINGS = dict(key_colors='white', scale_lighting=True, playing_notes=True, root_color=True,
-                        clip_scale=False, background_intensity=100, global_brightness=None)
+                        clip_scale=False, background_intensity=100, global_brightness=None,
+                        pitch_bend=True, pressure=True)
 
 
 def _is_percent(value):
@@ -127,6 +128,7 @@ class ROLIForLive(ControlSurface):
             self._track = None
             self._unsupported_scale_reported = None
             self._scale_source_status = 'live'
+            self._scale_source_enabled = False
             self._clip_scale_error = None
             self._settings_error = False
             self._settings = self._load_settings()
@@ -179,6 +181,15 @@ class ROLIForLive(ControlSurface):
         return self.get_roli_controls_state_v5().replace('roli_controls_v5', 'roli_controls_v6', 1) + (
             ' ' + self._settings['key_colors'])
 
+    def get_roli_controls_state_v7(self):
+        return self.get_roli_controls_state_v6().replace('roli_controls_v6', 'roli_controls_v7', 1) + (
+            ' %d' % int(self._scale_source_enabled))
+
+    def get_roli_controls_state_v8(self):
+        return self.get_roli_controls_state_v7().replace('roli_controls_v7', 'roli_controls_v8', 1) + (
+            ' %d %d %d' % (int(self._settings['pitch_bend']), int(self._settings['pressure']),
+                           int(bool(self._profile and self._profile['expression']))))
+
     def _keyboard_ready(self):
         return (self._serial is not None and self._snapshot is not None and self._mode is not None
                 and self._last_response is not None
@@ -216,6 +227,20 @@ class ROLIForLive(ControlSurface):
         self._set_setting('clip_scale', value)
         return self.get_roli_controls_state_v4()
 
+    def set_roli_pitch_bend(self, value):
+        self._set_expression('pitch_bend', value)
+        return self.get_roli_controls_state_v8()
+
+    def set_roli_pressure(self, value):
+        self._set_expression('pressure', value)
+        return self.get_roli_controls_state_v8()
+
+    def _set_expression(self, name, value):
+        if not self._keyboard_ready() or not self._profile['expression']:
+            self.log_message('ROLI for Live: rejected %s; expression controls unavailable' % name)
+            raise RuntimeError('Expression controls require a connected, supported keyboard')
+        self._set_setting(name, value)
+
     def set_roli_global_brightness(self, value):
         self._set_level('global_brightness', value)
         return self.get_roli_controls_state_v5()
@@ -248,6 +273,8 @@ class ROLIForLive(ControlSurface):
         self._settings = updated
         if name == 'playing_notes':
             self._configure_note_feedback(clear=not bool(value))
+        if name in ('pitch_bend', 'pressure'):
+            self._ensure_expression()
         self._update_lighting()
         self.log_message('ROLI for Live: saved %s %s' % (name, 'on' if value else 'off'))
 
@@ -262,10 +289,12 @@ class ROLIForLive(ControlSurface):
             with open(SETTINGS_PATH) as file:
                 stored = json.load(file)
             if (not isinstance(stored, dict) or type(stored.get('version')) is not int
-                    or stored['version'] not in (1, 2, 3, 4, 5)):
+                    or stored['version'] not in (1, 2, 3, 4, 5, 6)):
                 raise ValueError('Invalid settings schema or version')
             fields = set(DEFAULT_SETTINGS)
             levels = {'background_intensity', 'global_brightness'}
+            if stored['version'] < 6:
+                fields -= {'pitch_bend', 'pressure'}
             if stored['version'] < 5:
                 fields.remove('key_colors')
                 fields.add('white_keys')
@@ -278,7 +307,7 @@ class ROLIForLive(ControlSurface):
             if (set(stored) != fields | {'version'}
                     or any(type(stored[name]) is not bool for name in fields - levels - {'key_colors'})):
                 raise ValueError('Invalid settings schema or version')
-            if stored['version'] == 5 and stored['key_colors'] not in KEY_COLORS:
+            if stored['version'] >= 5 and stored['key_colors'] not in KEY_COLORS:
                 raise ValueError('Invalid key color setting')
             if stored['version'] >= 4 and (
                     not _is_percent(stored['background_intensity'])
@@ -302,7 +331,7 @@ class ROLIForLive(ControlSurface):
             fd, temporary = tempfile.mkstemp(prefix='.roli-settings-', suffix='.tmp',
                                              dir=os.path.dirname(SETTINGS_PATH))
             with os.fdopen(fd, 'w') as file:
-                json.dump(dict(settings, version=5), file, sort_keys=True)
+                json.dump(dict(settings, version=6), file, sort_keys=True)
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(temporary, SETTINGS_PATH)
@@ -526,6 +555,11 @@ class ROLIForLive(ControlSurface):
         elif BRIGHTNESS not in snap:
             snap[BRIGHTNESS] = self._device_config[BRIGHTNESS]
             changed = True
+        if self._profile['expression']:
+            for item in self._expression_mode_items():
+                if item not in snap:
+                    snap[item] = self._device_config[item]
+                    changed = True
         if changed:
             try:
                 with open(SNAPSHOT_PATH, 'w') as f:
@@ -561,13 +595,14 @@ class ROLIForLive(ControlSurface):
         if not self._profile['expression']:
             return
         changed = []
-        for item in self._expression_mode_items():
-            if self._device_config.get(item) != 1:
-                self._write(item, 1)
-                changed.append(item)
+        values = (1, int(self._settings['pitch_bend']), int(self._settings['pressure']))
+        for item, value in zip(self._expression_mode_items(), values):
+            self._write(item, value)
+            if self._device_config.get(item) != value:
+                changed.append((item, value))
         if changed:
-            self.log_message('ROLI for Live: enabled MPE / pitch bend / pressure (items %r)' % (changed,))
-            self.show_message('ROLI for Live: turned on MPE pitch bend and pressure on the keyboard')
+            self.log_message('ROLI for Live: queued native MPE / pitch bend / pressure settings %r' % (changed,))
+            self.show_message('ROLI for Live: requested keyboard pitch bend and pressure settings')
 
     # ---------------------------------------------------------------- lighting
 
@@ -603,6 +638,7 @@ class ROLIForLive(ControlSurface):
             self.log_message('ROLI for Live: %s' % error)
             self.show_message('ROLI for Live: %s' % error)
         self._clip_scale_error = error
+        self._scale_source_enabled = state[1]
         return state
 
     def _update_lighting(self):
@@ -612,8 +648,9 @@ class ROLIForLive(ControlSurface):
             self._write(BRIGHTNESS, self._settings['global_brightness'])
         if not self._settings['scale_lighting']:
             self._scale_source_status = 'off'
+            self._scale_source_enabled = False
             for item, value in self._snapshot.items():
-                if item != BRIGHTNESS:
+                if item in list(SHARED_LIGHTING_ITEMS) + self._lighting_mode_items() and item != BRIGHTNESS:
                     self._write(item, value)
             return
         root, scale_on, intervals, name = self._scale_state()

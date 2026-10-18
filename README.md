@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>Your ROLI Piano, lit up by Ableton Live.</b><br>
-  Scales, track colors and playing notes on the keys, with MPE expression untouched.
+  Scales, track colors and playing notes on the keys, with native MPE expression.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 Ableton Live and turns a ROLI Piano keyboard into a Push-style partner for Live.
 No extra app, no driver, no Max for Live, and
 nothing to add to your Live Sets for the core integration. The optional **ROLI Controls**
-device uses Max for Live to adjust and save the lighting preferences.
+device uses Max for Live to adjust and save lighting and native expression preferences.
 
 **Hardware scope:** tested on **ROLI Piano 49**, not a general integration for all ROLI
 controllers. **Piano M (formerly LUMI Keys)** also has a lighting profile, now
@@ -38,19 +38,20 @@ integration.** See the [compatibility matrix](#compatibility).
 | 🎨 **Track colors** | White keys with roots in the selected track's color by default; optional live controls switch to track-colored keys with brighter roots. |
 | ✨ **Playing notes** | Keys light white as the selected track's clip plays (Session and Arrangement). |
 | ⏮️⏭️ **Track buttons** | The keyboard's `<` / `>` buttons select the previous/next track. |
-| 🎹 **Native MPE** | Per-note pitch bend and pressure go straight into Live; the script never touches your notes. If the keyboard's bend/pressure are switched off, it turns them on. |
+| 🎹 **Native MPE** | Performance MIDI goes straight into Live; the script does not filter your notes. On Piano 49, native pitch bend and pressure default to ON and can be switched independently. MPE stays enabled. |
 | ↩️ **Native lighting handoff** | Requests restoration of captured lighting settings when Live closes, then releases API mode on Piano 49. Automatic native-lighting return is user-confirmed on Piano 49. |
 
 ### What this fork adds
 
-The optional **ROLI Controls** device has five buttons, in this order: **Scale lighting,
+The optional **ROLI Controls** device has five lighting buttons, in this order: **Scale lighting,
 Follow clip scale, Key colors, Root color, Show playing notes**, plus **Global Brightness** and
-**Background Brightness** sliders alongside them. Settings survive Live restarts, even
+**Background Brightness** sliders alongside them. A separate **Expression** column adds
+**Pitch bend** and **Pressure** switches for Piano 49. Settings survive Live restarts, even
 when the controls device is not loaded. The device shows connection/source status and
 reconnects automatically when the keyboard becomes available.
 Native, theme-aware divider lines separate the columns, the two brightness controls,
 and the status area.
-Controls and brightness labels use 10-point text; the status uses 9-point text.
+Controls, labels and status use consistent 10-point text.
 A non-clickable dot uses Live's theme accent when the script reports the keyboard
 connected, and a neutral color when disconnected or the connection cannot be confirmed.
 Status text remains visible; the dot does not confirm hardware receipt of lighting commands.
@@ -131,7 +132,7 @@ pitch bend range to **48** to match the keyboard.
 
 ## Optional live controls (experimental)
 
-The code-first **ROLI Controls** Max for Live Audio Effect provides five buttons and two sliders.
+The code-first **ROLI Controls** Max for Live Audio Effect provides seven buttons and two sliders.
 It passes stereo audio straight through without processing, and can sit on the Master/Main
 track inside an Audio Effect Rack with your other default devices. Its controls operate
 globally; scale and playing-note lighting still follow the selected MIDI track, not the
@@ -148,9 +149,12 @@ The controls are:
 | **Show playing notes: ON / OFF** | Independently enables/disables temporary white highlights for sounding clip notes and Live's note feedback. It does not switch root-note coloring off. Turning it off clears feedback notes; normal performance MIDI is unaffected. |
 | **Global Brightness (%): 0-100** | Native global LED brightness, including playback highlights. Initially reads the keyboard's current value without changing it. Once adjusted, saves and reapplies your choice, including with Scale lighting off. Zero turns the LEDs off, not performance MIDI. |
 | **Background Brightness (%): 0-100** | Scales background and root RGB channels relative to native playback highlights in White and Track. Saved but inactive in Rainbow, which ignores custom RGB colors. Requires Scale lighting on; 25 gives the hardware-tested dim background. Zero removes custom background colors but does not disable notes. This is not calibrated perceptual brightness. |
+| **Pitch bend: ON / OFF** | Saves and requests native pitch-bend enable/disable on a connected Piano 49. Independent of pressure, lighting and palette; MPE remains enabled. Unavailable on unverified Piano M/LUMI profiles. |
+| **Pressure: ON / OFF** | Saves and requests native pressure (aftertouch) enable/disable on a connected Piano 49, not note velocity. Independent of pitch bend, lighting and palette; MPE remains enabled. Unavailable on unverified Piano M/LUMI profiles. |
 
 Without saved preferences, the defaults are **White**, **Scale lighting ON**,
-**Follow clip scale OFF**, **Show playing notes ON**, **Root color ON**, and **Background 100%**,
+**Follow clip scale OFF**, **Show playing notes ON**, **Root color ON**, **Background 100%**,
+**Pitch bend ON**, and **Pressure ON**,
 with **no global brightness override**, including when no Max device is loaded. The keyboard's active
 scale/display mode still determines which keys display the selected colors.
 
@@ -217,9 +221,16 @@ and edits to a playing clip's scale are checked on the script's display updates 
 10 Hz), independently of Show playing notes. This follows the clip's assigned scale, not chord
 changes inferred from its MIDI notes. Existing keyboard built-in scale limitations remain.
 
-The status shows **Playing clip scale** while following a clip. Otherwise it shows
-**Using Live scale**, with **No playing clip** beneath it, when stopped, in an Arrangement
-gap, or on a track with no applicable playing MIDI clip.
+The connection dot, connection state and scale message share one vertically centered
+row, for example **Connected | Live scale: Chromatic (Scale mode OFF)**.
+The scale message shows **Playing clip scale** while following a clip, or **Live scale - no playing clip**
+when stopped, in an Arrangement gap, or on a track with no applicable playing MIDI clip.
+With Follow clip scale off, it shows **Live scale**.
+When the active source's Scale mode is off, the scale row combines source and state:
+**Live scale: Chromatic (Scale mode OFF)** or
+**Playing clip scale: Chromatic (Scale mode OFF)**. The no-playing-clip reason is retained
+when applicable. A playing clip's own Scale mode is independent of Live's global switch.
+Clip API fallback/error messages remain explicit alongside the effective Live scale state.
 If the host does not expose the clip-scale properties, or a read fails, the script uses
 Live's scale with an explicit **Clip scale unavailable** or **Clip scale read error** status
 and a diagnostic in Live's log. It retries automatically without discarding the saved
@@ -254,6 +265,26 @@ Setting Global to 0 makes the LEDs dark. Setting Background to 0 removes the scr
 background/root colors while playback highlights may still appear. Neither disables the
 keyboard's notes. Raise the sliders to bring the lighting back.
 
+### Native expression
+
+The **Expression** column controls the keyboard's native pitch-bend and pressure settings,
+not a MIDI filter in the Audio Effect. Notes and performance MIDI still travel through
+Live's normal MIDI routing. Pressure is aftertouch, not note-on velocity. MPE mode stays
+enabled; the instrument's MPE support and bend range must still match the keyboard.
+Both switches work with Scale lighting off and in Rainbow. Choices are global and survive
+Live restarts even without the controls device loaded; duplicated devices show the same
+accepted preferences rather than creating independent expression settings.
+
+Expression controls require a connected Piano 49. They are disabled and show **N/A** on
+Piano M/LUMI, whose native expression configuration remains unverified and untouched.
+The script captures the supported keyboard's native MPE, pitch-bend and pressure settings
+before changing them, and requests restoration on shutdown or before a native mode change.
+Turning Scale lighting off restores only lighting, not expression.
+Older recovery snapshots that lack expression fields are extended with the currently
+observed native values; earlier, uncaptured expression settings cannot be reconstructed.
+These new expression switches have simulated-host regression coverage; hardware validation
+of the independent OFF states is still pending.
+
 ### Connection status
 
 The UI reads the script's accepted settings every 500 ms. **Connected** means keyboard
@@ -280,9 +311,15 @@ Key colors, which advances through White, Track, and Rainbow; the
 button labels display only confirmed script state. Key colors and Root color are disabled
 while Scale lighting is off; their choices are retained for the next time it is enabled.
 Root color is also disabled in Rainbow; Follow clip scale remains available.
-The device is 240 Max units wide, keeping the original button stack unchanged and adding
-two horizontal `live.slider` controls beside it. It uses Live's dynamic device/control/text
-colors and a wrapped status area; no duplicated device title or development credits appear
+The device is 376 Max units wide, with lighting, brightness and Expression columns above
+a full-width status strip. The connection dot and a single 350-unit-wide text object
+share the same vertical center in the footer. Connection, scale source and scale/error
+details appear on one line at 10 points. Full status text remains available in the annotation.
+An API/read failure shows **Connection unconfirmed** rather than claiming a disconnection;
+an explicitly disconnected or uninitialized keyboard shows **Disconnected**.
+Column dividers stop above the status strip, and a horizontal divider separates it from
+the controls. It uses Live's dynamic device/control/text colors;
+no duplicated device title or development credits appear
 inside the panel. Slider changes are coalesced every 100 ms, confirmed through Python,
 and rediscovered on each write. Polling uses `set` messages that do not emit slider output.
 Sliders stay disabled until the keyboard is initialized; Background also requires Scale
@@ -295,21 +332,25 @@ messages before enabling controls; a collapsed range displays an error and block
 
 ### Saved preferences
 
-Each successful change saves all seven preferences atomically to
+Each successful change saves all nine preferences atomically to
 `Remote Scripts/ROLI_for_Live/settings.json` in the User Library. This is separate from
-`device_snapshot.json`, which captures the keyboard's pre-script lighting for restoration.
+`device_snapshot.json`, which captures pre-script lighting and supported native expression
+settings for restoration.
 The settings file is read when the script starts and is not removed at shutdown.
 The Mac installation's Dropbox User Library therefore syncs these preferences. Settings
 are global, not per Live Set; they are not re-read live if another computer edits the file.
 Avoid simultaneous edits on multiple computers (Dropbox conflict resolution is not handled).
-Existing schemas 1-4 are read without resetting your choices; the legacy White/Track
+Existing schemas 1-5 are read without resetting your choices; the legacy White/Track
 boolean migrates to the corresponding named key-color choice. Root color starts on when
 absent, Follow clip scale starts off, Background starts at 100%, and global brightness is left
-alone until explicitly changed. If upgrading the temporary 25% background test, select
+alone until explicitly changed. Pitch bend and Pressure start on when absent, preserving
+the previous automatic-enable behavior on Piano 49. If upgrading the temporary 25% background test, select
 Background 25% to retain that appearance; the local test installation has been migrated
-with that value. The next successful change writes schema version 5. Older control devices
+with that value. The next successful change writes schema version 6. Older control devices
 can still use existing bridge methods for White/Track; selecting either exits Rainbow.
-The current three-color device requires the updated v6 bridge. Install the matching Python
+The current device requires the v8 bridge, which reports native expression preferences
+and profile support as well as the active source's Scale mode. Older bridge replies remain
+unchanged. Install the matching Python
 script and replace older device instances, including those embedded in racks/default Sets.
 Native brightness is captured before any override and restored at script shutdown.
 Recovery snapshots from earlier versions retain their original colors while adding the
@@ -399,7 +440,7 @@ restore those in Dashboard with Live closed.
 | What you see | What to check |
 |---|---|
 | **Disconnected** | Check keyboard power, USB/MIDI connection and the ROLI control-surface input/output in Live. Wait for initialization. The device keeps polling; it does not assume which connection component failed. |
-| **Using Live scale / No playing clip** | For clip following, keep the intended MIDI track selected and transport running inside an unmuted Arrangement clip, or launch its Session clip. Stopped playback, timeline gaps and Session overrides can legitimately leave no applicable clip. |
+| **Live scale - no playing clip** | For clip following, keep the intended MIDI track selected and transport running inside an unmuted Arrangement clip, or launch its Session clip. Stopped playback, timeline gaps and Session overrides can legitimately leave no applicable clip. |
 | **Clip scale unavailable / read error** | The script is explicitly using Live's scale instead. Check host support (clip-scale properties were added in 12.4.15b1) and Live's log. |
 | Keys are dark | Raise Global Brightness, then Background Brightness if Scale lighting is on. A saved 0% is valid and survives restarting Live. |
 | Show playing notes seems unchanged when pressing keys | Test a playing MIDI clip, not just physical key presses. Native touch/pressure lighting is separate. Lower Background Brightness if white playback highlights blend into the base keys. |

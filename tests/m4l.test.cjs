@@ -41,15 +41,16 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
         }
         call(name, value) {
             assert.ok(this.id, "must not call a stale surface");
-            if (name === "get_roli_controls_state_v6") {
+            if (name === "get_roli_controls_state_v8") {
                 if (this.target.error) throw new Error(this.target.error);
                 if (this.target.reply) return this.target.reply;
-                return ["roli_controls_v6", this.target.white ?? (this.target.colors === "white" ? 1 : 0), this.target.scale ?? 1,
+                return ["roli_controls_v8", this.target.white ?? (this.target.colors === "white" ? 1 : 0), this.target.scale ?? 1,
                     this.target.notes ?? 1, this.target.root ?? 1, this.target.clip ?? 0,
                     this.target.ready, this.target.settingsOk === false ? 0 : 1,
                     this.target.source ?? (this.target.clip ? "clip" : "live"),
                     this.target.brightness ?? 100, this.target.background ?? 100,
-                    this.target.colors ?? (this.target.white ? "white" : "track")];
+                    this.target.colors ?? (this.target.white ? "white" : "track"), this.target.scaleEnabled ?? 1,
+                    this.target.pitch ?? 1, this.target.pressure ?? 1, this.target.expression ?? 1];
             }
             const fields = {
                 set_roli_key_colors: "colors",
@@ -58,7 +59,9 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
                 set_roli_root_color: "root",
                 set_roli_clip_scale: "clip",
                 set_roli_global_brightness: "brightness",
-                set_roli_background_intensity: "background"
+                set_roli_background_intensity: "background",
+                set_roli_pitch_bend: "pitch",
+                set_roli_pressure: "pressure"
             };
             assert.ok(fields[name], "only known settings may be written");
             writes.push(value);
@@ -73,7 +76,7 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
                 }
                 this.target.settingsOk = true;
             }
-            return this.call("get_roli_controls_state_v6");
+            return this.call("get_roli_controls_state_v8");
         }
     }
     class Task {
@@ -89,8 +92,10 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
         post: text => logs.push(text)
     });
     vm.runInContext(source, context);
+    const display = () => outputs.filter(o => o[0] === 5 && o[1] === "set").at(-1)?.[2];
     return {
         context, outputs, logs, writes, commands, tasks,
+        display,
         surfaces: value => { surfaces = value; },
         click(index = 1) { context.inlet = index; context.bang(); },
         level(index, value) { context.inlet = index; context.msg_float(value); },
@@ -100,7 +105,8 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
                 task.fn();
             }
         },
-        status() { return outputs.filter(o => o[0] === 5 && o[1] === "set").at(-1)?.[2]; },
+        status() { return display()?.split(" | ").slice(1).join(" | "); },
+        connection() { return display()?.split(" | ")[0]; },
         label(index = 0) { return outputs.filter(o => o[0] === index && o[1] === "text").at(-1)?.[2]; }
     };
 }
@@ -110,12 +116,35 @@ test("waits for live.thisdevice, then reads the script without changing it", () 
     assert.equal(h.outputs.length, 0);
     assert.equal(h.tasks.length, 0);
     h.context.bang();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.equal(h.label(), "Key colors: Track");
     assert.deepEqual(h.writes, []);
     assert.equal(h.tasks[0].interval, 500);
     assert.equal(h.tasks[0].repeating, true);
     assert.deepEqual(h.outputs.find(o => o[1] === "text" && o[0] === 0), [0, "text", "Key colors: Track"]);
+});
+
+test("single-line status combines connection and scale details without losing full annotations", () => {
+    const h = setup();
+    for (const [text, display] of [
+        ["Connected\nLive scale - no playing clip", "Live scale - no playing clip"],
+        ["Connected\nLive scale: Chromatic (Scale mode OFF)", "Live scale: Chromatic (Scale mode OFF)"],
+        ["Connected\nPlaying clip scale: Chromatic (Scale mode OFF)",
+            "Playing clip scale: Chromatic (Scale mode OFF)"],
+        ["Connected\nClip scale unavailable; Live scale: Chromatic (Scale mode OFF)",
+            "Clip scale unavailable; Live scale: Chromatic (Scale mode OFF)"],
+        ["Disconnected", "Check keyboard connection and Live MIDI settings."],
+        ["Settings file error.\nSee Live log.", "Settings file error. See Live log."]
+    ]) {
+        h.context.status(text, text.startsWith("Connected"));
+        assert.equal(h.display(), (text.startsWith("Connected") ? "Connected" : "Disconnected") +
+            " | " + display, "the actual widget receives the complete single-line status");
+        assert.equal(h.status(), display);
+        assert.equal(h.connection(), text.startsWith("Connected") ? "Connected" : "Disconnected");
+        assert.equal(h.status().split("\n").length, 1, "scale and error details fit a single row");
+        assert.deepEqual(h.outputs.filter(o => o[0] === 5 && o[1] === "annotation").at(-1),
+            [5, "annotation", text], "complete status text remains available");
+    }
 });
 
 test("connection dot follows confirmed readiness without hiding status or clip-source errors", () => {
@@ -126,36 +155,157 @@ test("connection dot follows confirmed readiness without hiding status or clip-s
     assert.equal(dot(), undefined, "no connection is claimed before Live API initialization");
     h.context.bang();
     assert.equal(dot(), 0);
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     surface.ready = 1;
     h.context.refresh();
     assert.equal(dot(), 1);
-    assert.equal(h.status(), "Connected\nUsing Live scale\nNo playing clip");
+    assert.equal(h.status(), "Live scale - no playing clip");
     for (const source of ["unsupported", "error"]) {
         surface.source = source;
         h.context.refresh();
         assert.equal(dot(), 1, "clip fallback does not imply disconnection");
-        assert.match(h.status(), /Connected\nClip scale (unavailable|read error)\nUsing Live scale/);
+        assert.match(h.status(), /Clip scale (unavailable|read error); Live scale/);
     }
     surface.settingsOk = false;
     h.context.refresh();
     assert.equal(dot(), 1, "a settings-file error does not imply disconnection");
+    assert.equal(h.connection(), "Connected");
     assert.match(h.status(), /Settings file error/);
     surface.error = "Live API unavailable";
     h.context.refresh();
     assert.equal(dot(), 0, "a stale connection must not stay accented after API failure");
+    assert.equal(h.connection(), "Connection unconfirmed");
     assert.equal(h.status(), "Live API unavailable");
     delete surface.error;
     surface.settingsOk = true;
     surface.source = "clip";
     h.context.refresh();
     assert.equal(dot(), 1);
-    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.status(), "Playing clip scale");
     h.surfaces([]);
     h.context.refresh();
     assert.equal(dot(), 0);
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     assert.deepEqual(h.writes, [], "connection feedback must never change saved settings");
+});
+
+test("Scale mode OFF reports Chromatic for the active source in every palette", () => {
+    for (const colors of ["white", "track", "rainbow"]) {
+        for (const source of ["live", "idle", "clip", "unsupported", "error"]) {
+            const h = setup();
+            const surface = { id: 7, colors, ready: 1, clip: source === "live" ? 0 : 1,
+                source, scaleEnabled: 0 };
+            h.surfaces([surface]);
+            h.context.bang();
+            if (source === "unsupported" || source === "error") {
+                assert.match(h.status(), /Clip scale (unavailable|read error); Live scale: Chromatic \(Scale mode OFF\)/);
+            } else {
+                assert.equal(h.status(), (source === "clip" ? "Playing clip scale" : "Live scale") +
+                    ": Chromatic (Scale mode OFF)" + (source === "idle" ? " - no playing clip" : ""));
+            }
+            assert.deepEqual(h.outputs.filter(o => o[0] === 8 && o[1] === "set").at(-1), [8, "set", 1]);
+            surface.scaleEnabled = 1;
+            h.context.refresh();
+            assert.doesNotMatch(h.status(), /Chromatic|mode OFF/);
+            if (source === "clip") {
+                assert.equal(h.status(), "Playing clip scale");
+            }
+            surface.scale = 0;
+            surface.source = "off";
+            surface.scaleEnabled = 0;
+            h.context.refresh();
+            assert.equal(h.status(), "Native colors restored");
+            assert.deepEqual(h.writes, [], "status updates must not change preferences or playback");
+        }
+    }
+});
+
+test("expression controls use saved confirmed state independently of lighting and each other", () => {
+    const h = setup();
+    const surface = { id: 7, ready: 1, colors: "rainbow", scale: 0, pitch: 0, pressure: 1 };
+    h.surfaces([surface]);
+    h.context.bang();
+    assert.equal(h.label(9), "Pitch bend: OFF");
+    assert.equal(h.label(10), "Pressure: ON");
+    assert.deepEqual(h.writes, [], "loading saved expression must not overwrite it");
+    for (const index of [9, 10]) {
+        assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1), [index, "active", 1]);
+    }
+    h.click(8);
+    assert.equal(h.label(9), "Pitch bend: ON");
+    assert.equal(h.label(10), "Pressure: ON");
+    h.click(9);
+    assert.equal(h.label(9), "Pitch bend: ON");
+    assert.equal(h.label(10), "Pressure: OFF");
+    assert.deepEqual(h.commands, [["set_roli_pitch_bend", 1], ["set_roli_pressure", 0]]);
+    assert.equal(surface.scale, 0);
+    assert.equal(surface.colors, "rainbow");
+});
+
+test("unsupported or disconnected keyboards cannot receive expression writes", () => {
+    for (const [expression, ready] of [[0, 1], [1, 0]]) {
+        const h = setup();
+        h.surfaces([{ id: 7, expression, ready }]);
+        h.context.bang();
+        if (!expression) {
+            assert.equal(h.label(9), "Pitch bend: N/A");
+            assert.equal(h.label(10), "Pressure: N/A");
+        }
+        for (const index of [9, 10]) {
+            assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1),
+                [index, "active", 0]);
+        }
+        h.click(8);
+        h.click(9);
+        assert.match(h.status(), /Control unavailable/);
+        assert.deepEqual(h.writes, []);
+    }
+});
+
+test("failed expression saves, rejected values and stale surfaces never show successful changes", () => {
+    for (const failure of ["failSave", "reject", "removed"]) {
+        for (const inlet of [8, 9]) {
+            const h = setup();
+            const surface = { id: 7, ready: 1, pitch: 1, pressure: 1 };
+            h.surfaces([surface]);
+            h.context.bang();
+            if (failure === "removed") {
+                h.surfaces([]);
+            } else {
+                surface[failure] = true;
+            }
+            h.click(inlet);
+            assert.match(h.status(), /Settings were not saved|did not accept|Check keyboard connection/);
+            assert.equal(h.label(9), "Pitch bend: ON");
+            assert.equal(h.label(10), "Pressure: ON");
+            assert.equal(surface.pitch, 1);
+            assert.equal(surface.pressure, 1);
+            for (const index of [9, 10]) {
+                assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1),
+                    [index, "active", 0]);
+            }
+        }
+    }
+});
+
+test("two device instances follow the same expression preferences without startup writes", () => {
+    const first = setup();
+    const second = setup();
+    const surface = { id: 7, ready: 1, pitch: 1, pressure: 1 };
+    for (const h of [first, second]) {
+        h.surfaces([surface]);
+        h.context.bang();
+        assert.deepEqual(h.writes, []);
+    }
+    first.click(8);
+    second.context.refresh();
+    assert.equal(second.label(9), "Pitch bend: OFF");
+    second.click(9);
+    first.context.refresh();
+    assert.equal(first.label(10), "Pressure: OFF");
+    assert.equal(first.label(9), "Pitch bend: OFF");
+    assert.deepEqual(first.commands, [["set_roli_pitch_bend", 0]]);
+    assert.deepEqual(second.commands, [["set_roli_pressure", 0]]);
 });
 
 test("Rainbow displays confirmed state, disables custom lighting controls, and restores them on White", () => {
@@ -164,7 +314,7 @@ test("Rainbow displays confirmed state, disables custom lighting controls, and r
     h.surfaces([surface]);
     h.context.bang();
     assert.equal(h.label(), "Key colors: Rainbow");
-    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.status(), "Playing clip scale");
     assert.equal(h.label(3), "Root color: OFF");
     assert.equal(h.label(4), "Follow clip scale: ON");
     for (const [index, active] of [[0, 1], [1, 1], [2, 1], [3, 0], [4, 1], [6, 1], [7, 0]]) {
@@ -194,7 +344,7 @@ test("Rainbow choice survives scale lighting off and on", () => {
     assert.equal(h.label(), "Key colors: Rainbow");
     assert.match(h.status(), /Native colors restored/);
     h.click(2);
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.deepEqual(h.commands, [["set_roli_scale_lighting", 0], ["set_roli_scale_lighting", 1]]);
 });
 
@@ -221,7 +371,7 @@ test("Rainbow rejects stale root-color events but allows Clip scale changes", ()
     h.context.refresh();
     h.click(5);
     assert.equal(h.label(4), "Follow clip scale: ON");
-    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.status(), "Playing clip scale");
     assert.deepEqual(h.commands, [["set_roli_clip_scale", 1]]);
 });
 
@@ -261,7 +411,7 @@ test("white-keys startup default is displayed without a write and the first clic
     assert.deepEqual(h.writes, []);
     assert.deepEqual(h.outputs.find(o => o[0] === 0 && o[1] === "text"),
         [0, "text", "Key colors: White"]);
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     h.click();
     assert.deepEqual(h.writes, [1]);
     assert.equal(h.label(), "Key colors: Track");
@@ -280,7 +430,7 @@ test("missing connection shows neutral status and reconnects automatically", () 
     const h = setup();
     h.surfaces([]);
     h.context.bang();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     for (let index = 0; index < 5; index++) {
         assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1), [index, "active", 0]);
     }
@@ -288,7 +438,7 @@ test("missing connection shows neutral status and reconnects automatically", () 
     assert.equal(h.logs.length, 1, "repeated failures should not flood the console");
     h.surfaces([{ id: 11, white: 1, ready: 1 }]);
     h.tasks[0].fn();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.equal(h.label(), "Key colors: White");
     assert.equal(h.tasks.length, 1, "reconnection must not require reloading the device");
     assert.deepEqual(h.writes, [], "automatic connection must not change preferences");
@@ -301,29 +451,29 @@ test("does not select an unrelated control surface", () => {
     const h = setup();
     h.surfaces([{ id: 1, type: "Push", info: "function get_control_names", error: "wrong surface" }]);
     h.context.bang();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     assert.deepEqual(h.writes, []);
 });
 
 test("polling rejects a removed surface even when its old API object retains a valid ID", () => {
     const h = setup({ retainRemovedIds: true });
     h.context.bang();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     h.surfaces([]);
     h.tasks[0].fn();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     h.surfaces([{ id: 18, white: 1, ready: 1 }]);
     h.tasks[0].fn();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.equal(h.label(), "Key colors: White");
     assert.deepEqual(h.writes, []);
 });
 
 test("accepts a generic ControlSurface only when its API advertises the bridge", () => {
     const h = setup();
-    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v6", white: 0, ready: 1 }]);
+    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v8", white: 0, ready: 1 }]);
     h.context.bang();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
 });
 
 test("multiple ROLI surfaces are ambiguous and never written", () => {
@@ -339,7 +489,7 @@ test("keyboard waiting is distinct from a ready script", () => {
     const h = setup();
     h.surfaces([{ id: 7, white: 0, ready: 0 }]);
     h.context.bang();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
 });
 
 test("power-off and reconnection update status on the same live script without changing preferences", () => {
@@ -347,15 +497,15 @@ test("power-off and reconnection update status on the same live script without c
     const surface = { id: 7, white: 1, scale: 1, notes: 0, root: 0, ready: 1 };
     h.surfaces([surface]);
     h.context.bang();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     surface.ready = 0;
     h.tasks[0].fn();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     assert.equal(h.label(2), "Show playing notes: OFF");
     assert.equal(h.label(3), "Root color: OFF");
     surface.ready = 1;
     h.tasks[0].fn();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.deepEqual(h.writes, []);
 });
 
@@ -368,7 +518,13 @@ test("invalid or old script replies fail explicitly before any write", () => {
         ["roli_controls_v5", 1, 1, 1, 1, 0, 1, 1, "live", 100, -1],
         ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 101, 25, "white"],
         ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 100, -1, "white"],
-        ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "invalid"]
+        ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "invalid"],
+        ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "white"],
+        ["roli_controls_v7", 1, 1, 1, 1, 0, 1, 1, "live", 101, 25, "white", 1],
+        ["roli_controls_v7", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "invalid", 1],
+        ["roli_controls_v7", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "white", 2],
+        ["roli_controls_v7", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "white", 1],
+        ["roli_controls_v8", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "white", 1, 1, 1, 2]
     ]) {
         const h = setup();
         h.surfaces([{ id: 7, reply }]);
@@ -463,7 +619,7 @@ test("settings load and save failures stay visible and cannot look like a succes
     h.surfaces([{ id: 8, white: 1, ready: 1 }]);
     h.click();
     assert.equal(h.label(), "Key colors: Track");
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
 });
 
 test("reinitialization and deletion cancel polling", () => {
@@ -483,11 +639,11 @@ test("clip-scale control alternates confirmed state independently and never writ
     assert.deepEqual(h.writes, []);
     h.click(5);
     assert.equal(h.label(4), "Follow clip scale: ON");
-    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.status(), "Playing clip scale");
     assert.equal(h.label(2), "Show playing notes: ON");
     h.click(5);
     assert.equal(h.label(4), "Follow clip scale: OFF");
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.deepEqual(h.commands, [["set_roli_clip_scale", 1], ["set_roli_clip_scale", 0]]);
     assert.equal(h.tasks.length, 1);
 });
@@ -498,24 +654,24 @@ test("clip-scale source and fallback messages remain explicit and recover automa
     h.surfaces([surface]);
     h.context.bang();
     assert.equal(h.label(4), "Follow clip scale: ON");
-    assert.equal(h.status(), "Connected\nUsing Live scale\nNo playing clip");
+    assert.equal(h.status(), "Live scale - no playing clip");
     for (const [source, label] of [
         ["unsupported", "Clip scale unavailable"], ["error", "Clip scale read error"]
     ]) {
         surface.source = source;
         h.context.refresh();
-        assert.equal(h.status(), `Connected\n${label}\nUsing Live scale`);
+        assert.equal(h.status(), `${label}; Live scale`);
         const logs = h.logs.length;
         h.context.refresh();
         assert.equal(h.logs.length, logs);
     }
     surface.ready = 0;
     h.context.refresh();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     surface.ready = 1;
     surface.source = "clip";
     h.context.refresh();
-    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.status(), "Playing clip scale");
     assert.deepEqual(h.writes, []);
 });
 
@@ -561,7 +717,7 @@ test("startup slider output before live.thisdevice cannot overwrite saved levels
     assert.equal(h.tasks.length, 0);
     assert.deepEqual(h.writes, []);
     h.context.bang();
-    assert.equal(h.status(), "Connected");
+    assert.equal(h.connection(), "Connected");
     assert.deepEqual(h.writes, []);
 });
 
@@ -613,7 +769,7 @@ test("unknown hardware brightness is not replaced by the slider's startup value"
     assert.deepEqual(h.outputs.filter(o => o[0] === 6 && o[1] === "active").at(-1), [6, "active", 0]);
     h.level(6, 0);
     h.flush();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     assert.deepEqual(h.writes, []);
 });
 
@@ -623,7 +779,7 @@ test("queued slider writes rediscover the surface and reject removal", () => {
     h.level(6, 40);
     h.surfaces([]);
     h.flush();
-    assert.equal(h.status(), "Disconnected");
+    assert.equal(h.connection(), "Disconnected");
     assert.deepEqual(h.writes, []);
 });
 

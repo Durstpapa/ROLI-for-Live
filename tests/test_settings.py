@@ -66,6 +66,29 @@ class SurfaceTestCase(unittest.TestCase):
 
 
 class SettingsTests(SurfaceTestCase):
+    def test_v7_reports_global_scale_mode_without_changing_legacy_replies_or_settings(self):
+        surface, _ = self.create()
+        tick(surface, 60)
+        for palette in range(3):
+            surface.set_roli_key_colors(palette)
+            for follow_clip in (0, 1):
+                surface.set_roli_clip_scale(follow_clip)
+                for enabled in (True, False, True):
+                    self.song.scale_mode = enabled
+                    tick(surface, 2)
+                    commands = list(fake.COMMANDS)
+                    reply = surface.get_roli_controls_state_v7()
+                    self.assertEqual(reply,
+                                     surface.get_roli_controls_state_v6().replace(
+                                         'roli_controls_v6', 'roli_controls_v7', 1) +
+                                     ' %d' % int(enabled))
+                    self.assertEqual(reply.split()[8], 'idle' if follow_clip else 'live')
+                    self.assertEqual(fake.COMMANDS, commands, 'bridge reads must not send MIDI')
+        surface.set_roli_scale_lighting(0)
+        tick(surface, 2)
+        self.assertEqual(surface.get_roli_controls_state_v7().split()[8], 'off')
+        self.assertTrue(surface.get_roli_controls_state_v7().endswith(' 0'))
+
     def test_shutdown_restores_lighting_then_releases_api_without_changing_mode_or_preferences(self):
         surface, instance = self.create()
         tick(surface, 60)
@@ -155,8 +178,8 @@ class SettingsTests(SurfaceTestCase):
         surface.set_roli_root_color(0)
         tick(surface, 10)
         self.assertEqual(self.read_settings(), dict(
-            version=5, key_colors='track', scale_lighting=False, playing_notes=False, root_color=False,
-            clip_scale=False, background_intensity=100, global_brightness=None))
+            version=6, key_colors='track', scale_lighting=False, playing_notes=False, root_color=False,
+            clip_scale=False, background_intensity=100, global_brightness=None, pitch_bend=True, pressure=True))
         surface, instance = self.restart(surface)
         tick(surface, 60)
         self.assertEqual(surface.get_roli_controls_state(), 'roli_controls_v2 0 0 0 1 1')
@@ -438,8 +461,8 @@ class SettingsTests(SurfaceTestCase):
         self.assertEqual(self.read_settings(), legacy, 'loading must not rewrite the old file')
         surface.set_roli_root_color(0)
         self.assertEqual(self.read_settings(), dict(
-            version=5, key_colors='track', scale_lighting=False, playing_notes=False, root_color=False,
-            clip_scale=False, background_intensity=100, global_brightness=None))
+            version=6, key_colors='track', scale_lighting=False, playing_notes=False, root_color=False,
+            clip_scale=False, background_intensity=100, global_brightness=None, pitch_bend=True, pressure=True))
         surface, instance = self.restart(surface)
         self.assertEqual(surface.get_roli_controls_state_v3(), 'roli_controls_v3 0 0 0 0 0 1')
 
@@ -557,7 +580,7 @@ class RainbowTests(SurfaceTestCase):
             self.assertEqual(self.read_settings(), stored, 'loading must not rewrite preferences')
             self.assertEqual(surface._settings['key_colors'], 'white' if white else 'track')
             surface.set_roli_key_colors(2)
-            expected = dict(stored, version=5, key_colors='rainbow')
+            expected = dict(stored, version=6, key_colors='rainbow', pitch_bend=True, pressure=True)
             del expected['white_keys']
             self.assertEqual(self.read_settings(), expected)
             surface.disconnect()
@@ -669,7 +692,7 @@ class RainbowTests(SurfaceTestCase):
     def test_invalid_saved_color_reports_error_and_preserves_file(self):
         for value in ('invalid', 2, None, True, []):
             with self.subTest(value=value):
-                stored = dict(roli_for_live.DEFAULT_SETTINGS, version=5, key_colors=value)
+                stored = dict(roli_for_live.DEFAULT_SETTINGS, version=6, key_colors=value)
                 with open(roli_for_live.SETTINGS_PATH, 'w') as file:
                     json.dump(stored, file)
                 surface, _ = self.create()

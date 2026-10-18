@@ -113,7 +113,7 @@ class BrightnessTests(SurfaceTestCase):
             self.assertEqual(surface._settings['global_brightness'], stored.get('global_brightness'))
             surface.set_roli_background_intensity(25)
             updated = self.read_settings()
-            self.assertEqual(updated['version'], 5)
+            self.assertEqual(updated['version'], 6)
             self.assertEqual(updated['background_intensity'], 25)
             self.assertEqual(updated['global_brightness'], stored.get('global_brightness'))
             self.assertEqual(updated['key_colors'], 'track')
@@ -126,7 +126,7 @@ class BrightnessTests(SurfaceTestCase):
     def test_invalid_saved_levels_report_an_error_instead_of_applying_them(self):
         for name, value in (('background_intensity', True), ('background_intensity', 101),
                             ('global_brightness', False), ('global_brightness', -1)):
-            stored = dict(roli_for_live.DEFAULT_SETTINGS, version=5)
+            stored = dict(roli_for_live.DEFAULT_SETTINGS, version=6)
             stored[name] = value
             with open(roli_for_live.SETTINGS_PATH, 'w') as file:
                 json.dump(stored, file)

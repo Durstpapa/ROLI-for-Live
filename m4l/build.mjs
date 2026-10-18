@@ -7,7 +7,7 @@ const source = fileURLToPath(new URL("./ROLI-Controls.js", import.meta.url));
 export const outputDir = fileURLToPath(new URL("../dist/m4l/", import.meta.url));
 
 export async function build() {
-    const patch = await compile(source, { deviceWidth: 240 });
+    const patch = await compile(source, { deviceWidth: 376 });
     const p = patch.patcher;
     const boxes = p.boxes.map(({ box }) => box);
     const script = boxes.find(box => box.text === "v8");
@@ -15,7 +15,7 @@ export async function build() {
     const audioOut = boxes.find(box => box.text === "plugout~");
     const controls = boxes.filter(box => box.maxclass === "live.text");
     const sliders = boxes.filter(box => box.maxclass === "live.slider");
-    if (!script || !audioIn || !audioOut || controls.length !== 5 || sliders.length !== 2) {
+    if (!script || !audioIn || !audioOut || controls.length !== 7 || sliders.length !== 2) {
         throw new Error("Unexpected js2max template; cannot safely wire controls");
     }
     p.boxes = p.boxes.filter(({ box }) => box.maxclass !== "comment");
@@ -26,17 +26,21 @@ export async function build() {
     for (let channel = 0; channel < 2; channel++) {
         p.lines.push({ patchline: { source: [audioIn.id, channel], destination: [audioOut.id, channel] } });
     }
-    const names = ["key_colors", "scale_lighting", "playing_notes", "root_color", "clip_scale"];
+    const names = ["key_colors", "scale_lighting", "playing_notes", "root_color", "clip_scale",
+        "pitch_bend", "pressure"];
     const presentationOrder = ["scale_lighting", "clip_scale", "key_colors", "root_color", "playing_notes"];
     const annotations = [
         "Cycles White, Track, Rainbow. Rainbow follows Live's scale with the native rainbow palette; Root color and Background Brightness are saved but inactive. Used when Scale lighting is on.",
         "Off restores the keyboard's captured pre-script lighting settings. Navigation and MPE remain active.",
         "Controls Live's note feedback and playing-clip highlighting, not the Piano's native touch/pressure lighting.",
         "Off makes root keys match the other lit keys, without changing notes or scale membership. Used when Scale lighting is on with White or Track colors; saved but inactive in Rainbow.",
-        "On follows the selected track's playing MIDI clip root, scale and Scale mode independently of Live's global Scale mode switch. Falls back to Live's global scale settings when no applicable clip plays or clip-scale API is unavailable. Off always follows Live's global scale settings. Requires Live 12.4.15b1 or newer. Used when Scale lighting is on, including Rainbow."
+        "On follows the selected track's playing MIDI clip root, scale and Scale mode independently of Live's global Scale mode switch. Falls back to Live's global scale settings when no applicable clip plays or clip-scale API is unavailable. Off always follows Live's global scale settings. Requires Live 12.4.15b1 or newer. Used when Scale lighting is on, including Rainbow.",
+        "Enables or disables native pitch bend on a connected Piano 49. Independent of lighting and pressure; MPE remains enabled. Saved across restarts. Previous native settings are restored on script shutdown. Unavailable on unverified Piano M/LUMI profiles.",
+        "Enables or disables native pressure (aftertouch) on a connected Piano 49, not note velocity. Independent of lighting and pitch bend; MPE remains enabled. Saved across restarts. Previous native settings are restored on script shutdown. Unavailable on unverified Piano M/LUMI profiles."
     ];
     controls.forEach((control, index) => {
-        p.lines.push({ patchline: { source: [script.id, index], destination: [control.id, 0] } });
+        const outlet = index < 5 ? index : index + 4;
+        p.lines.push({ patchline: { source: [script.id, outlet], destination: [control.id, 0] } });
         control.mode = 0;
         control.numoutlets = 2;
         control.outlettype = ["", ""];
@@ -44,7 +48,9 @@ export async function build() {
         control.parameter_enable = 0;
         control.active = 0;
         control.annotation = annotations[index];
-        control.presentation_rect = [8, 6 + presentationOrder.indexOf(control.varname) * 25, 124, 24];
+        control.presentation_rect = index < 5 ?
+            [8, 6 + presentationOrder.indexOf(control.varname) * 25, 124, 24] :
+            [244, 36 + (index - 5) * 25, 124, 24];
         control.fontsize = 10;
         control.fontface = 0;
         control.rounded = 2;
@@ -59,6 +65,14 @@ export async function build() {
         };
     });
 
+    p.boxes.push({ box: {
+        id: "label-expression", maxclass: "comment", numinlets: 1, numoutlets: 0,
+        text: "Expression", patching_rect: [244, 570, 124, 24],
+        presentation: 1, presentation_rect: [244, 6, 124, 24],
+        fontsize: 10,
+        saved_attribute_attributes: { textcolor: { expression: "themecolor.live_control_fg" } }
+    } });
+
     const levels = [
         ["global_brightness", "Global\nBrightness (%)", 100,
             "Global LED brightness, including playback highlights. Double-click resets to 100%. Works with Scale lighting on or off. Saved only when changed; script shutdown restores the captured hardware brightness."],
@@ -67,7 +81,7 @@ export async function build() {
     ];
     sliders.forEach((slider, index) => {
         const [name, label, resetValue, annotation] = levels[index];
-        const y = 6 + index * 76;
+        const y = 6 + index * 64;
         slider.varname = name;
         slider.parameter_enable = 1;
         slider.active = 0;
@@ -105,7 +119,7 @@ export async function build() {
     p.boxes.push({ box: {
         id: connectionId, maxclass: "led", numinlets: 1, numoutlets: 1, outlettype: ["int"],
         patching_rect: [144, 530, 6, 6],
-        presentation: 1, presentation_rect: [8, 137, 6, 6],
+        presentation: 1, presentation_rect: [8, 147, 6, 6],
         ignoreclick: 1, parameter_enable: 0,
         annotation: "Waiting for Live API...",
         saved_attribute_attributes: {
@@ -117,9 +131,9 @@ export async function build() {
     p.boxes.push({ box: {
         id: statusId, maxclass: "comment", numinlets: 1, numoutlets: 0,
         text: "Waiting for Live API...",
-        patching_rect: [10, 530, 124, 36],
-        presentation: 1, presentation_rect: [18, 133, 114, 36],
-        fontsize: 9, linecount: 3,
+        patching_rect: [10, 530, 350, 16],
+        presentation: 1, presentation_rect: [18, 143, 350, 16],
+        fontsize: 10, linecount: 1,
         saved_attribute_attributes: {
             textcolor: { expression: "themecolor.live_control_fg" }
         }
@@ -127,9 +141,10 @@ export async function build() {
     p.lines.push({ patchline: { source: [script.id, 5], destination: [statusId, 0] } });
     p.lines.push({ patchline: { source: [script.id, 8], destination: [connectionId, 0] } });
     const dividers = [
-        ["columns", [138, 6, 1, 157]],
-        ["brightness", [144, 73, 88, 1]],
-        ["status", [8, 131, 124, 1]]
+        ["columns", [138, 6, 1, 124]],
+        ["brightness", [144, 67, 88, 1]],
+        ["status", [8, 132, 360, 1]],
+        ["expression", [238, 6, 1, 124]]
     ];
     dividers.forEach(([name, rect], index) => {
         p.boxes.push({ box: {

@@ -31,6 +31,26 @@ def arrangement(root, start, end):
 
 
 class ClipScaleTests(SurfaceTestCase):
+    def test_v7_reports_clip_scale_mode_independently_then_falls_back_to_global_mode(self):
+        surface = self.start()
+        self.song.scale_mode = False
+        tick(surface, 2)
+        self.assertEqual(surface.get_roli_controls_state_v7().split()[8], 'clip')
+        self.assertTrue(surface.get_roli_controls_state_v7().endswith(' 1'))
+        self.playing.scale_mode = False
+        tick(surface, 2)
+        self.assertTrue(surface.get_roli_controls_state_v7().endswith(' 0'))
+        self.song.scale_mode = True
+        tick(surface, 2)
+        self.assertTrue(surface.get_roli_controls_state_v7().endswith(' 0'))
+        self.song.is_playing = False
+        tick(surface, 2)
+        self.assertEqual(surface.get_roli_controls_state_v7().split()[8], 'idle')
+        self.assertTrue(surface.get_roli_controls_state_v7().endswith(' 1'))
+        self.song.scale_mode = False
+        tick(surface, 2)
+        self.assertTrue(surface.get_roli_controls_state_v7().endswith(' 0'))
+
     def start(self, playing=None):
         self.playing = playing if playing is not None else clip()
         self.track.clip_slots = [fake.FakeSlot(self.playing)]
@@ -336,8 +356,8 @@ class ClipScaleTests(SurfaceTestCase):
         self.assertEqual(self.read_settings(), legacy)
         self.assertFalse(surface._settings['clip_scale'])
         surface.set_roli_clip_scale(1)
-        expected = dict(legacy, version=5, clip_scale=True, key_colors='track',
-                        background_intensity=100, global_brightness=None)
+        expected = dict(legacy, version=6, clip_scale=True, key_colors='track',
+                        background_intensity=100, global_brightness=None, pitch_bend=True, pressure=True)
         del expected['white_keys']
         self.assertEqual(self.read_settings(), expected)
 

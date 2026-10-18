@@ -6,8 +6,10 @@
 // @ui live.text "Follow clip scale" trigger inlet=5
 // @ui live.slider "Global brightness" inlet=6 min=0 max=100
 // @ui live.slider "Background intensity" inlet=7 min=0 max=100
-inlets = 8;
-outlets = 9;
+// @ui live.text "Pitch bend" trigger inlet=8
+// @ui live.text "Pressure" trigger inlet=9
+inlets = 10;
+outlets = 11;
 
 var surface = null;
 var pollTask = null;
@@ -16,7 +18,21 @@ var levelTask = null;
 var pendingLevels = {};
 
 function status(text, connected) {
-    outlet(5, "set", text);
+    var connection = connected ? "Connected" : "Connection unconfirmed";
+    if (connected === false || text === "Disconnected") {
+        connection = "Disconnected";
+    }
+    var display = text.indexOf("Connected\n") === 0 ? text.slice(10) : text;
+    if (text === "Connected") {
+        display = "";
+    } else if (text === "Disconnected") {
+        display = "Check keyboard connection and Live MIDI settings.";
+    } else if (text === "Waiting for Live API...") {
+        connection = text;
+        display = "";
+    }
+    display = display.replace(/\n/g, " ");
+    outlet(5, "set", connection + (display ? " | " + display : ""));
     outlet(5, "annotation", text);
     outlet(8, "set", connected ? 1 : 0);
     outlet(8, "annotation", connected ?
@@ -34,6 +50,8 @@ function disableControls() {
     }
     outlet(6, "active", 0);
     outlet(7, "active", 0);
+    outlet(9, "active", 0);
+    outlet(10, "active", 0);
 }
 
 function reportError(text, connected) {
@@ -45,9 +63,9 @@ function reportError(text, connected) {
 }
 
 function readState(api) {
-    var reply = api.call("get_roli_controls_state_v6");
+    var reply = api.call("get_roli_controls_state_v8");
     var text = Array.isArray(reply) ? reply.join(" ") : String(reply);
-    var match = /^roli_controls_v6 ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) (live|clip|idle|unsupported|error|off) (-1|\d{1,3}) (\d{1,3}) (white|track|rainbow)$/.exec(text);
+    var match = /^roli_controls_v8 ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) ([01]) (live|clip|idle|unsupported|error|off) (-1|\d{1,3}) (\d{1,3}) (white|track|rainbow) ([01]) ([01]) ([01]) ([01])$/.exec(text);
     if (!match || Number(match[9]) > 100 || Number(match[10]) > 100) {
         throw new Error("Update ROLI script: unexpected reply " + text);
     }
@@ -55,7 +73,9 @@ function readState(api) {
         white: Number(match[1]), scale: Number(match[2]), notes: Number(match[3]),
         root: Number(match[4]), clip: Number(match[5]), ready: match[6] === "1",
         settingsOk: match[7] === "1", source: match[8],
-        brightness: Number(match[9]), background: Number(match[10]), colors: match[11]
+        brightness: Number(match[9]), background: Number(match[10]), colors: match[11],
+        scaleEnabled: match[12] === "1", pitch: Number(match[13]),
+        pressure: Number(match[14]), expression: match[15] === "1"
     };
 }
 
@@ -69,7 +89,7 @@ function findSurface() {
         }
         var candidate = new LiveAPI(null, "id " + ids[++i]);
         if (candidate.type === "ROLIForLive" ||
-                String(candidate.info).indexOf("get_roli_controls_state_v6") !== -1) {
+                String(candidate.info).indexOf("get_roli_controls_state_v8") !== -1) {
             matches.push(candidate);
         }
     }
@@ -78,6 +98,17 @@ function findSurface() {
             "Disconnected");
     }
     return matches[0];
+}
+
+function scaleStatus(state) {
+    var text = state.source === "clip" ? "Playing clip scale" : "Live scale";
+    if (!state.scaleEnabled) {
+        text += ": Chromatic (Scale mode OFF)";
+    }
+    if (state.clip && state.source === "idle") {
+        text += " - no playing clip";
+    }
+    return text;
 }
 
 function refresh() {
@@ -89,6 +120,8 @@ function refresh() {
         buttonText(2, state.notes ? "Show playing notes: ON" : "Show playing notes: OFF");
         buttonText(3, state.root ? "Root color: ON" : "Root color: OFF");
         buttonText(4, state.clip ? "Follow clip scale: ON" : "Follow clip scale: OFF");
+        buttonText(9, state.expression ? (state.pitch ? "Pitch bend: ON" : "Pitch bend: OFF") : "Pitch bend: N/A");
+        buttonText(10, state.expression ? (state.pressure ? "Pressure: ON" : "Pressure: OFF") : "Pressure: N/A");
         outlet(0, "active", state.scale);
         outlet(1, "active", 1);
         outlet(2, "active", 1);
@@ -103,20 +136,22 @@ function refresh() {
         }
         outlet(6, "active", state.ready && state.brightness >= 0 ? 1 : 0);
         outlet(7, "active", state.ready && customColors ? 1 : 0);
+        outlet(9, "active", state.ready && state.expression ? 1 : 0);
+        outlet(10, "active", state.ready && state.expression ? 1 : 0);
         if (!state.settingsOk) {
             reportError("Settings file error.\nSee Live log.", state.ready);
         } else if (state.ready && state.scale && state.source === "unsupported") {
-            reportError("Connected\nClip scale unavailable\nUsing Live scale", true);
+            reportError("Connected\nClip scale unavailable; " + scaleStatus(state), true);
         } else if (state.ready && state.scale && state.source === "error") {
-            reportError("Connected\nClip scale read error\nUsing Live scale", true);
+            reportError("Connected\nClip scale read error; " + scaleStatus(state), true);
         } else {
             var text = "Disconnected";
             if (state.ready) {
                 text = "Connected";
                 if (!state.scale) {
                     text += "\nNative colors restored";
-                } else if (state.clip) {
-                    text += state.source === "clip" ? "\nPlaying clip scale" : "\nUsing Live scale\nNo playing clip";
+                } else {
+                    text += "\n" + scaleStatus(state);
                 }
             }
             status(text, state.ready);
@@ -131,6 +166,10 @@ function refresh() {
 }
 
 function bang() {
+    if (inlet === 8 || inlet === 9) {
+        toggleSetting(inlet - 3);
+        return;
+    }
     if (inlet >= 1 && inlet <= 5) {
         toggleSetting(inlet - 1);
         return;
@@ -185,9 +224,9 @@ function verifySliderRanges() {
 }
 
 function toggleSetting(index) {
-    var fields = ["colors", "scale", "notes", "root", "clip"];
+    var fields = ["colors", "scale", "notes", "root", "clip", "pitch", "pressure"];
     var methods = ["set_roli_key_colors", "set_roli_scale_lighting", "set_roli_playing_notes",
-        "set_roli_root_color", "set_roli_clip_scale"];
+        "set_roli_root_color", "set_roli_clip_scale", "set_roli_pitch_bend", "set_roli_pressure"];
     try {
         // Rediscover before writes: a removed/reordered surface must never receive a stale command.
         surface = findSurface();
@@ -195,7 +234,8 @@ function toggleSetting(index) {
         var state = readState(surface);
         if ((index === 0 && !state.scale) ||
                 (index === 3 && (!state.scale || state.colors === "rainbow")) ||
-                (index === 4 && !state.scale)) {
+                (index === 4 && !state.scale) ||
+                (index >= 5 && (!state.expression || !state.ready))) {
             throw new Error("Control unavailable for the current lighting mode");
         }
         var colors = ["white", "track", "rainbow"];
