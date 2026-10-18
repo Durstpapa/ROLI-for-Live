@@ -44,7 +44,8 @@ class ClipScaleTests(SurfaceTestCase):
 
     def assert_scale(self, root, intervals, enabled=True):
         self.assertEqual(DEVICE[roli_for_live.KEY], root)
-        self.assertEqual(DEVICE[roli_for_live.SCALE], builtin_index(intervals))
+        self.assertEqual(DEVICE[roli_for_live.SCALE],
+                         builtin_index(intervals) if enabled else roli_for_live.CHROMATIC)
         self.assertEqual(DEVICE[104], int(enabled))
 
     def test_default_keeps_live_scale_even_with_a_playing_clip(self):
@@ -56,6 +57,46 @@ class ClipScaleTests(SurfaceTestCase):
         self.assert_scale(0, MAJOR)
         self.assertEqual(surface.get_roli_controls_state_v4(),
                          'roli_controls_v4 1 1 1 1 0 1 1 live')
+
+    def test_rainbow_follows_session_and_arrangement_scales_without_changing_palette(self):
+        surface = self.start()
+        surface.set_roli_key_colors(2)
+        tick(surface, 2)
+        self.assert_scale(2, MINOR)
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+        self.playing.root_note = 7
+        self.playing.scale_intervals = MAJOR
+        tick(surface, 2)
+        self.assert_scale(7, MAJOR)
+        self.track.playing_slot_index = -1
+        first, second = arrangement(4, 0, 4), arrangement(9, 4, 8)
+        self.track.arrangement_clips = [first, second]
+        for position, root in ((1, 4), (5, 9)):
+            self.song.current_song_time = position
+            tick(surface, 2)
+            self.assert_scale(root, MINOR)
+            self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+            self.assertEqual(surface._scale_source_status, 'clip')
+        self.song.is_playing = False
+        tick(surface, 2)
+        self.assert_scale(0, MAJOR)
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+
+    def test_rainbow_clip_scale_mode_off_uses_chromatic_and_restores_clip_scale_when_enabled(self):
+        surface = self.start()
+        surface.set_roli_key_colors(2)
+        tick(surface, 2)
+        self.assert_scale(2, MINOR)
+        self.playing.scale_mode = False
+        tick(surface, 2)
+        self.assert_scale(2, MINOR, False)
+        self.assertEqual(DEVICE[22], 18)
+        self.assertEqual(surface._scale_source_status, 'clip')
+        self.assertTrue(self.song.scale_mode, 'clip toggle must not change the global switch')
+        self.playing.scale_mode = True
+        tick(surface, 2)
+        self.assert_scale(2, MINOR)
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
 
     def test_unselected_playing_clip_drives_all_scale_fields_with_notes_off(self):
         selected = clip(9, MAJOR)
@@ -295,8 +336,9 @@ class ClipScaleTests(SurfaceTestCase):
         self.assertEqual(self.read_settings(), legacy)
         self.assertFalse(surface._settings['clip_scale'])
         surface.set_roli_clip_scale(1)
-        expected = dict(legacy, version=4, clip_scale=True,
+        expected = dict(legacy, version=5, clip_scale=True, key_colors='track',
                         background_intensity=100, global_brightness=None)
+        del expected['white_keys']
         self.assertEqual(self.read_settings(), expected)
 
     def test_failed_clip_preference_save_never_changes_runtime_source(self):

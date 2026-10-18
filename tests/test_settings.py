@@ -155,7 +155,7 @@ class SettingsTests(SurfaceTestCase):
         surface.set_roli_root_color(0)
         tick(surface, 10)
         self.assertEqual(self.read_settings(), dict(
-            version=4, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
+            version=5, key_colors='track', scale_lighting=False, playing_notes=False, root_color=False,
             clip_scale=False, background_intensity=100, global_brightness=None))
         surface, instance = self.restart(surface)
         tick(surface, 60)
@@ -276,7 +276,7 @@ class SettingsTests(SurfaceTestCase):
                     self.assertEqual(file.read(), contents)
                 surface.set_roli_white_keys(0)
                 self.assertEqual(surface.get_roli_controls_state(), 'roli_controls_v2 0 1 1 0 1')
-                self.assertFalse(self.read_settings()['white_keys'])
+                self.assertEqual(self.read_settings()['key_colors'], 'track')
                 surface.disconnect()
                 self.surfaces.remove(surface)
 
@@ -438,7 +438,7 @@ class SettingsTests(SurfaceTestCase):
         self.assertEqual(self.read_settings(), legacy, 'loading must not rewrite the old file')
         surface.set_roli_root_color(0)
         self.assertEqual(self.read_settings(), dict(
-            version=4, white_keys=False, scale_lighting=False, playing_notes=False, root_color=False,
+            version=5, key_colors='track', scale_lighting=False, playing_notes=False, root_color=False,
             clip_scale=False, background_intensity=100, global_brightness=None))
         surface, instance = self.restart(surface)
         self.assertEqual(surface.get_roli_controls_state_v3(), 'roli_controls_v3 0 0 0 0 0 1')
@@ -500,6 +500,184 @@ class SettingsTests(SurfaceTestCase):
         surface.set_roli_root_color(1)
         tick(surface, 10)
         self.assertEqual(DEVICE[35], original_root)
+
+
+class RainbowTests(SurfaceTestCase):
+    def test_global_scale_mode_off_uses_chromatic_in_all_palettes_and_restores_selected_scale(self):
+        surface, _ = self.create()
+        tick(surface, 60)
+        self.song.root_note = 2
+        self.song.scale_name = 'Minor'
+        self.song.scale_intervals = [0, 2, 3, 5, 7, 8, 10]
+        for palette in range(3):
+            with self.subTest(palette=palette):
+                surface.set_roli_key_colors(palette)
+                self.song.scale_mode = True
+                tick(surface, 2)
+                self.assertEqual(DEVICE[22], 1)
+                self.assertEqual(DEVICE[104], 1)
+                self.song.scale_mode = False
+                tick(surface, 2)
+                self.assertEqual(DEVICE[22], 18, 'all notes must be in the native mask when disabled')
+                self.assertEqual(DEVICE[104], 0)
+                self.assertEqual(DEVICE[27], 2)
+                self.assertEqual(DEVICE[100], 4 if palette == 2 else 1)
+                self.assertEqual(self.song.scale_intervals, [0, 2, 3, 5, 7, 8, 10])
+                self.song.scale_mode = True
+                tick(surface, 2)
+                self.assertEqual(DEVICE[22], 1)
+                self.assertEqual(DEVICE[104], 1)
+
+    def test_scale_mode_off_does_not_warn_about_an_unused_unsupported_scale(self):
+        surface, _ = self.create()
+        tick(surface, 60)
+        self.song.scale_mode = False
+        self.song.scale_intervals = [0, 1, 4, 5, 7, 8, 10]
+        self.song.scale_name = 'Phrygian Dominant'
+        tick(surface, 2)
+        self.assertEqual(DEVICE[22], 18)
+        self.assertFalse(any('unsupported scale' in log for log in ControlSurface.logs))
+
+    def test_rainbow_scheme_matches_dashboard_hardware_readback(self):
+        self.assertEqual(roli_for_live.COLOR_TYPE_RAINBOW, 4)
+        surface, _ = self.create()
+        tick(surface, 60)
+        surface.set_roli_key_colors(2)
+        tick(surface, 2)
+        self.assertEqual(DEVICE[100], 4, 'scheme 3 is not the scale-aware Rainbow scheme')
+        self.assertEqual(DEVICE[104], 1)
+
+    def test_version_four_color_preferences_migrate_to_named_palettes_without_resetting_levels(self):
+        for white in (True, False):
+            stored = dict(version=4, white_keys=white, scale_lighting=True, playing_notes=False,
+                          root_color=False, clip_scale=True, background_intensity=25, global_brightness=61)
+            with open(roli_for_live.SETTINGS_PATH, 'w') as file:
+                json.dump(stored, file)
+            surface, _ = self.create()
+            self.assertEqual(self.read_settings(), stored, 'loading must not rewrite preferences')
+            self.assertEqual(surface._settings['key_colors'], 'white' if white else 'track')
+            surface.set_roli_key_colors(2)
+            expected = dict(stored, version=5, key_colors='rainbow')
+            del expected['white_keys']
+            self.assertEqual(self.read_settings(), expected)
+            surface.disconnect()
+            self.surfaces.remove(surface)
+
+    def test_rainbow_uses_native_colors_without_changing_playing_mode_on_both_profiles(self):
+        for serial in (b'RP4800000000TEST', b'LKB000000000TEST'):
+            with self.subTest(serial=serial):
+                fake.SERIAL_REPLY = fake.serial_reply(serial)
+                surface, instance = self.create()
+                tick(surface, 60)
+                surface.set_roli_clip_scale(1)
+                surface.set_roli_root_color(0)
+                surface.set_roli_background_intensity(25)
+                surface.set_roli_global_brightness(60)
+                surface.set_roli_key_colors(2)
+                tick(surface, 5)
+                self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+                self.assertEqual(DEVICE[104], 1, 'Rainbow retains scale highlighting')
+                self.assertEqual(DEVICE[20], self.original[20], 'native playing mode is unchanged')
+                for item in (34, 35):
+                    self.assertEqual(DEVICE[item], self.original[item], 'restore native shared colors')
+                self.assertEqual(DEVICE[27], self.song.root_note)
+                self.assertEqual(DEVICE[36], 60)
+                self.assertEqual(instance.velocity, 127)
+                self.assertEqual(ControlSurface.feedback_channels, [0])
+                self.assertTrue(surface._settings['clip_scale'])
+                self.assertFalse(surface._settings['root_color'])
+                self.assertEqual(surface._settings['background_intensity'], 25)
+                self.assertTrue(surface.get_roli_controls_state_v6().endswith('60 25 rainbow'))
+                self.song.root_note = 9
+                self.track.color = 0x123456
+                tick(surface, 5)
+                self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+                self.assertEqual(DEVICE[27], 9)
+                self.song.scale_mode = False
+                tick(surface, 5)
+                self.assertEqual(DEVICE[104], 0, 'Live scale mode off shows the full rainbow')
+                self.song.scale_mode = True
+                self.song.is_playing = True
+                self.song.current_song_time = 0.25
+                self.assertIn((0x90, 60, 127), ControlSurface.notes_out)
+                surface.disconnect()
+                fake.run_device(surface)
+                self.assert_original_lighting()
+                self.surfaces.remove(surface)
+
+    def test_leaving_rainbow_reapplies_saved_scale_root_and_background_preferences(self):
+        surface, _ = self.create()
+        tick(surface, 60)
+        surface.set_roli_root_color(0)
+        surface.set_roli_background_intensity(25)
+        surface.set_roli_key_colors(2)
+        tick(surface, 2)
+        surface.set_roli_key_colors(1)
+        tick(surface, 2)
+        expected = roli_for_live._argb(roli_for_live._dim(self.track.color, 0.25))
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_USER)
+        self.assertEqual(DEVICE[104], 1)
+        self.assertEqual(DEVICE[34], expected)
+        self.assertEqual(DEVICE[35], expected)
+        self.assertEqual(DEVICE[27], self.song.root_note)
+
+    def test_rainbow_survives_restart_reconnect_and_scale_off_without_rewriting_preferences(self):
+        surface, _ = self.create()
+        tick(surface, 60)
+        surface.set_roli_key_colors(2)
+        saved = self.read_settings()
+        surface, _ = self.restart(surface)
+        tick(surface, 60)
+        self.assertEqual(self.read_settings(), saved)
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+        surface.port_settings_changed()
+        tick(surface, 60)
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+        surface.set_roli_scale_lighting(0)
+        tick(surface, 2)
+        self.assert_original_lighting()
+        self.assertEqual(surface._settings['key_colors'], 'rainbow')
+        surface.set_roli_scale_lighting(1)
+        tick(surface, 2)
+        self.assertEqual(DEVICE[100], roli_for_live.COLOR_TYPE_RAINBOW)
+
+    def test_failed_color_save_preserves_previous_palette_and_pending_writes(self):
+        surface, _ = self.create()
+        tick(surface, 60)
+        surface.set_roli_key_colors(1)
+        tick(surface, 2)
+        saved = self.read_settings()
+        with patch.object(roli_for_live.os, 'replace', side_effect=PermissionError('denied')):
+            with self.assertRaises(PermissionError):
+                surface.set_roli_key_colors(2)
+        self.assertEqual(self.read_settings(), saved)
+        self.assertEqual(surface._settings['key_colors'], 'track')
+        self.assertEqual(surface._pending, {})
+
+    def test_invalid_color_values_fail_explicitly_and_legacy_setter_still_selects_white_or_track(self):
+        surface, _ = self.create()
+        for value in (-1, 3, 1.0, True, False, 'rainbow', None):
+            with self.assertRaises(ValueError):
+                surface.set_roli_key_colors(value)
+        self.assertFalse(os.path.exists(roli_for_live.SETTINGS_PATH))
+        for legacy, expected in ((1, 'white'), (0, 'track')):
+            surface.set_roli_key_colors(2)
+            surface.set_roli_white_keys(legacy)
+            self.assertEqual(surface._settings['key_colors'], expected)
+            self.assertEqual(surface.get_roli_lighting_state(), 'roli_lighting_v1 %d 0' % legacy)
+
+    def test_invalid_saved_color_reports_error_and_preserves_file(self):
+        for value in ('invalid', 2, None, True, []):
+            with self.subTest(value=value):
+                stored = dict(roli_for_live.DEFAULT_SETTINGS, version=5, key_colors=value)
+                with open(roli_for_live.SETTINGS_PATH, 'w') as file:
+                    json.dump(stored, file)
+                surface, _ = self.create()
+                self.assertTrue(surface._settings_error)
+                self.assertEqual(surface._settings['key_colors'], 'white')
+                self.assertEqual(self.read_settings(), stored)
+                surface.disconnect()
+                self.surfaces.remove(surface)
 
 
 if __name__ == '__main__':

@@ -97,25 +97,28 @@ class BrightnessTests(SurfaceTestCase):
         self.assertFalse(os.path.exists(roli_for_live.SETTINGS_PATH))
 
     def test_all_legacy_schemas_migrate_without_enabling_global_brightness(self):
-        for version in (1, 2, 3):
+        for version in (1, 2, 3, 4):
             stored = dict(version=version, white_keys=False, scale_lighting=False, playing_notes=False)
             if version >= 2:
                 stored['root_color'] = False
             if version >= 3:
                 stored['clip_scale'] = True
+            if version >= 4:
+                stored.update(background_intensity=45, global_brightness=61)
             with open(roli_for_live.SETTINGS_PATH, 'w') as file:
                 json.dump(stored, file)
             surface, _ = self.create()
             self.assertEqual(self.read_settings(), stored)
-            self.assertEqual(surface._settings['background_intensity'], 100)
-            self.assertIsNone(surface._settings['global_brightness'])
+            self.assertEqual(surface._settings['background_intensity'], stored.get('background_intensity', 100))
+            self.assertEqual(surface._settings['global_brightness'], stored.get('global_brightness'))
             surface.set_roli_background_intensity(25)
             updated = self.read_settings()
-            self.assertEqual(updated['version'], 4)
+            self.assertEqual(updated['version'], 5)
             self.assertEqual(updated['background_intensity'], 25)
-            self.assertIsNone(updated['global_brightness'])
+            self.assertEqual(updated['global_brightness'], stored.get('global_brightness'))
+            self.assertEqual(updated['key_colors'], 'track')
             for name, value in stored.items():
-                if name != 'version':
+                if name not in ('version', 'white_keys', 'background_intensity'):
                     self.assertEqual(updated[name], value)
             surface.disconnect()
             self.surfaces.remove(surface)
@@ -123,7 +126,7 @@ class BrightnessTests(SurfaceTestCase):
     def test_invalid_saved_levels_report_an_error_instead_of_applying_them(self):
         for name, value in (('background_intensity', True), ('background_intensity', 101),
                             ('global_brightness', False), ('global_brightness', -1)):
-            stored = dict(roli_for_live.DEFAULT_SETTINGS, version=4)
+            stored = dict(roli_for_live.DEFAULT_SETTINGS, version=5)
             stored[name] = value
             with open(roli_for_live.SETTINGS_PATH, 'w') as file:
                 json.dump(stored, file)

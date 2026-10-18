@@ -44,10 +44,16 @@ integration.** See the [compatibility matrix](#compatibility).
 ### What this fork adds
 
 The optional **ROLI Controls** device has five buttons, in this order: **Scale lighting,
-Key colors, Root color, Playing notes, Clip scale**, plus **Global Brightness** and
+Follow clip scale, Key colors, Root color, Show playing notes**, plus **Global Brightness** and
 **Background Brightness** sliders alongside them. Settings survive Live restarts, even
 when the controls device is not loaded. The device shows connection/source status and
 reconnects automatically when the keyboard becomes available.
+Native, theme-aware divider lines separate the columns, the two brightness controls,
+and the status area.
+Controls and brightness labels use 10-point text; the status uses 9-point text.
+A non-clickable dot uses Live's theme accent when the script reports the keyboard
+connected, and a neutral color when disconnected or the connection cannot be confirmed.
+Status text remains visible; the dot does not confirm hardware receipt of lighting commands.
 
 - [Controls and installation](#optional-live-controls-experimental): every button, slider and default.
 - [Following a playing clip](#following-a-playing-clip): use clip scales without changing selection.
@@ -135,18 +141,36 @@ The controls are:
 
 | Control | Behavior |
 |---|---|
-| **Scale lighting: ON / OFF** | On follows the chosen scale source and selected track colors. Off restores captured native key colors and scale settings, not a factory reset. Saved global brightness, track navigation and MPE stay active. |
-| **Key colors: White / Track** | White keys with track-colored roots, or track-colored keys with brighter roots. Used only when Scale lighting is on. |
-| **Root color: ON / OFF** | Off removes the special root color: root keys match the other lit keys in White and Track modes. It does not make them dark or disable those notes. Used only when Scale lighting is on. |
-| **Playing notes: ON / OFF** | Independently enables/disables temporary white highlights for sounding clip notes and Live's note feedback. It does not switch root-note coloring off. Turning it off clears feedback notes; normal performance MIDI is unaffected. |
-| **Clip scale: ON / OFF** | On follows the playing MIDI clip on the selected track, without selecting it or changing Live's global scale. Off follows Live's global scale as before. Used only when Scale lighting is on. |
+| **Scale lighting: ON / OFF** | On follows the chosen scale source with White, Track, or Rainbow colors. Off restores captured native key colors and scale settings, not a factory reset. Saved global brightness, track navigation and MPE stay active. |
+| **Follow clip scale: ON / OFF** | On follows a playing MIDI clip's root, scale and Scale mode independently of Live's global Scale mode switch. If no applicable clip plays, it falls back to Live's global settings. Off always follows Live's global settings. Available when Scale lighting is on, including Rainbow. |
+| **Key colors: White / Track / Rainbow** | Each click advances White → Track → Rainbow → White. White uses track-colored roots; Track uses track-colored keys with brighter roots. Rainbow uses the native multicolor palette with Live/clip scale highlighting. Used only when Scale lighting is on. |
+| **Root color: ON / OFF** | Off removes the special root color in White and Track modes, without disabling notes. Saved but inactive in Rainbow, which ignores custom root RGB colors. Requires Scale lighting on. |
+| **Show playing notes: ON / OFF** | Independently enables/disables temporary white highlights for sounding clip notes and Live's note feedback. It does not switch root-note coloring off. Turning it off clears feedback notes; normal performance MIDI is unaffected. |
 | **Global Brightness (%): 0-100** | Native global LED brightness, including playback highlights. Initially reads the keyboard's current value without changing it. Once adjusted, saves and reapplies your choice, including with Scale lighting off. Zero turns the LEDs off, not performance MIDI. |
-| **Background Brightness (%): 0-100** | Scales background and root RGB channels relative to native playback highlights. Requires Scale lighting on; 25 gives the hardware-tested dim background. Zero removes background colors but does not disable notes. This is not calibrated perceptual brightness. |
+| **Background Brightness (%): 0-100** | Scales background and root RGB channels relative to native playback highlights in White and Track. Saved but inactive in Rainbow, which ignores custom RGB colors. Requires Scale lighting on; 25 gives the hardware-tested dim background. Zero removes custom background colors but does not disable notes. This is not calibrated perceptual brightness. |
 
 Without saved preferences, the defaults are **White**, **Scale lighting ON**,
-**Clip scale OFF**, **Playing notes ON**, **Root color ON**, and **Background 100%**,
+**Follow clip scale OFF**, **Show playing notes ON**, **Root color ON**, and **Background 100%**,
 with **no global brightness override**, including when no Max device is loaded. The keyboard's active
 scale/display mode still determines which keys display the selected colors.
+
+Rainbow changes the active mode's color scheme, not the native playing-mode selection.
+It follows the same Live or playing-clip scale source as White and Track. Turning off
+the scale source's Scale mode shows the full rainbow; Scale lighting OFF instead restores
+the captured native settings. Global Brightness and Show playing notes remain independent.
+Scale mode OFF sends a Chromatic native scale as well as disabling Show Scale: Rainbow
+can otherwise continue filtering against the previously selected native scale. Turning
+Scale mode back on reapplies the source's root and scale without changing Live's settings.
+The user confirmed both directions of the global Scale mode toggle in Live on Piano 49
+(2026-10-18).
+With Follow clip scale ON and a playing clip, that clip's Scale mode is the source; the global
+switch applies when following Live's global scale or falling back to it.
+The user confirmed in Dashboard that Rainbow honors Show Scale but ignores Global Key
+Color and Root Key Color on Piano 49 (2026-10-18). Integration switching, restoration,
+and scale following were subsequently confirmed on Piano 49 / Live 12.4.15b7, including
+native-lighting return after quitting with Rainbow active. The integrated scheme uses
+Dashboard-observed Rainbow ID 4; the initial ID 3 trial did not honor scales.
+LUMI/Piano M Rainbow still requires separate hardware verification.
 
 Requires Max for Live and **Max 9** (the device uses `v8` JavaScript). This is an
 experimental fork feature, not included in the upstream release downloads.
@@ -173,7 +197,7 @@ Your saved lighting preferences remain unchanged.
 ### Following a playing clip
 
 1. Select the MIDI track you want the keyboard to follow.
-2. Turn **Scale lighting ON** and **Clip scale ON**.
+2. Turn **Scale lighting ON** and **Follow clip scale ON**.
 3. Start playback through an Arrangement clip, or launch a Session clip on that track.
    Each clip must have its intended root, scale and Scale mode assigned in Live.
 4. To compare selection-independent behavior, keep the track selected and select another
@@ -181,7 +205,7 @@ Your saved lighting preferences remain unchanged.
    not the selected clip. Selecting another track changes which track is followed.
 
 Empty Arrangement clips work too: they can provide scale guidance without containing
-notes. Playing notes can be OFF and clip-scale following still works.
+notes. Show playing notes can be OFF and clip-scale following still works.
 
 Clip-scale following requires clip-level scale properties, introduced in
 [Live 12.4.15b1](https://www.ableton.com/en/release-notes/live-12-beta/).
@@ -190,15 +214,16 @@ clips take precedence over Arrangement clips on the selected track; Arrangement 
 uses the running transport and clip timeline bounds, not the clip's own `is_playing` flag,
 so empty clips can guide the scale too. It respects muted clips and Session stop/override states. Playback handoffs
 and edits to a playing clip's scale are checked on the script's display updates (roughly
-10 Hz), independently of Playing notes. This follows the clip's assigned scale, not chord
+10 Hz), independently of Show playing notes. This follows the clip's assigned scale, not chord
 changes inferred from its MIDI notes. Existing keyboard built-in scale limitations remain.
 
-The status shows **Playing clip scale** while following a clip and **Live scale (no clip)**
-when stopped, in an Arrangement gap, or on a track with no applicable playing MIDI clip.
+The status shows **Playing clip scale** while following a clip. Otherwise it shows
+**Using Live scale**, with **No playing clip** beneath it, when stopped, in an Arrangement
+gap, or on a track with no applicable playing MIDI clip.
 If the host does not expose the clip-scale properties, or a read fails, the script uses
 Live's scale with an explicit **Clip scale unavailable** or **Clip scale read error** status
 and a diagnostic in Live's log. It retries automatically without discarding the saved
-Clip scale choice. No transport, clip selection, clip metadata or global scale is written.
+Follow clip scale choice. No transport, clip selection, clip metadata or global scale is written.
 The user confirmed empty adjacent D-minor and C-major Arrangement clips change the
 Piano's lighting during playback on Live 12.4.15b7 (2026-10-16), after the Arrangement
 playback-flag correction and a Live restart. Other paths have automated simulated-host
@@ -211,7 +236,7 @@ to reset it to **25%**. These are explicit user actions and save the chosen rese
 Loading the device does not apply these reset values or replace your saved preferences.
 The fresh-install background default remains 100%.
 
-1. Turn **Scale lighting ON** and **Playing notes ON**, then play a MIDI clip with notes.
+1. Turn **Scale lighting ON** and **Show playing notes ON**, then play a MIDI clip with notes.
 2. Try **Background Brightness 25%** as a starting point. This dims background and root
    colors without requesting a lower playback-highlight velocity.
 3. Lower **Global Brightness** until the white playback highlights feel comfortable.
@@ -250,16 +275,19 @@ so restoring the connection does not require reloading the device.
 Missing/older scripts and ambiguous multiple ROLI
 surfaces disable all controls and display an explanation; details also appear in Max's console.
 Only one ROLI control surface is supported by this proof of concept.
-Each button click reads the script's current setting and requests its opposite; the
+Each button click reads the script's current setting and requests its opposite, except
+Key colors, which advances through White, Track, and Rainbow; the
 button labels display only confirmed script state. Key colors and Root color are disabled
 while Scale lighting is off; their choices are retained for the next time it is enabled.
+Root color is also disabled in Rainbow; Follow clip scale remains available.
 The device is 240 Max units wide, keeping the original button stack unchanged and adding
 two horizontal `live.slider` controls beside it. It uses Live's dynamic device/control/text
 colors and a wrapped status area; no duplicated device title or development credits appear
 inside the panel. Slider changes are coalesced every 100 ms, confirmed through Python,
 and rediscovered on each write. Polling uses `set` messages that do not emit slider output.
 Sliders stay disabled until the keyboard is initialized; Background also requires Scale
-lighting on. Loading a device does not apply its local startup/default slider values.
+lighting on with White or Track colors. Its saved value is retained in Rainbow.
+Loading a device does not apply its local startup/default slider values.
 The native slider parameter engine stays enabled to preserve its 0-100 range, with
 Hidden parameter visibility and initialization disabled to prevent Set/preset recall.
 Startup checks both endpoints directly on the native widgets with non-outputting `set`
@@ -274,12 +302,15 @@ The settings file is read when the script starts and is not removed at shutdown.
 The Mac installation's Dropbox User Library therefore syncs these preferences. Settings
 are global, not per Live Set; they are not re-read live if another computer edits the file.
 Avoid simultaneous edits on multiple computers (Dropbox conflict resolution is not handled).
-Existing schemas 1-3 are read without resetting your choices. Root color starts on when
-absent, Clip scale starts off, Background starts at 100%, and global brightness is left
+Existing schemas 1-4 are read without resetting your choices; the legacy White/Track
+boolean migrates to the corresponding named key-color choice. Root color starts on when
+absent, Follow clip scale starts off, Background starts at 100%, and global brightness is left
 alone until explicitly changed. If upgrading the temporary 25% background test, select
 Background 25% to retain that appearance; the local test installation has been migrated
-with that value. The next successful change writes schema version 4. Older control devices
-can still use existing bridge methods; the slider device requires the updated v5 bridge.
+with that value. The next successful change writes schema version 5. Older control devices
+can still use existing bridge methods for White/Track; selecting either exits Rainbow.
+The current three-color device requires the updated v6 bridge. Install the matching Python
+script and replace older device instances, including those embedded in racks/default Sets.
 Native brightness is captured before any override and restored at script shutdown.
 Recovery snapshots from earlier versions retain their original colors while adding the
 currently observed hardware brightness.
@@ -293,7 +324,7 @@ reports the failure instead of confirming an unsaved choice. Details appear in L
 Removing/bypassing the Max device does not reset preferences. Turn **Scale lighting OFF**
 to restore captured key colors and scale settings while retaining your global brightness,
 or disable the control surface entirely to also restore captured native brightness.
-Playing notes remains independent, including when Scale lighting is off. The keyboard's
+Show playing notes remains independent, including when Scale lighting is off. The keyboard's
 own local response to physically played keys may still occur; the switch controls feedback
 generated by this integration, not every built-in lighting behavior.
 White highlights may be difficult to distinguish when Key colors is White; use Track
@@ -368,10 +399,10 @@ restore those in Dashboard with Live closed.
 | What you see | What to check |
 |---|---|
 | **Disconnected** | Check keyboard power, USB/MIDI connection and the ROLI control-surface input/output in Live. Wait for initialization. The device keeps polling; it does not assume which connection component failed. |
-| **Live scale (no clip)** | For clip following, keep the intended MIDI track selected and transport running inside an unmuted Arrangement clip, or launch its Session clip. Stopped playback, timeline gaps and Session overrides can legitimately leave no applicable clip. |
+| **Using Live scale / No playing clip** | For clip following, keep the intended MIDI track selected and transport running inside an unmuted Arrangement clip, or launch its Session clip. Stopped playback, timeline gaps and Session overrides can legitimately leave no applicable clip. |
 | **Clip scale unavailable / read error** | The script is explicitly using Live's scale instead. Check host support (clip-scale properties were added in 12.4.15b1) and Live's log. |
 | Keys are dark | Raise Global Brightness, then Background Brightness if Scale lighting is on. A saved 0% is valid and survives restarting Live. |
-| Playing notes seems unchanged when pressing keys | Test a playing MIDI clip, not just physical key presses. Native touch/pressure lighting is separate. Lower Background Brightness if white playback highlights blend into the base keys. |
+| Show playing notes seems unchanged when pressing keys | Test a playing MIDI clip, not just physical key presses. Native touch/pressure lighting is separate. Lower Background Brightness if white playback highlights blend into the base keys. |
 | Sliders are stuck at zero or a **Slider range error** appears | Load the current generated device. An earlier build disabled the native slider parameter engines, collapsing their range. The corrected device validates native 0/100 readback before allowing writes. If drag attempts saved zeros, raise Global and Background to the desired levels after updating. |
 | **Settings file error / settings were not saved** | Check write access to the script's settings file and Live's log. Runtime preferences are not changed when saving fails. |
 | Old labels/layout or an **Update ROLI script** message | Install matching script and device versions. Python changes require a full Live quit/restart. Device-only changes require reloading the device if Live has not refreshed it automatically. |
@@ -476,7 +507,7 @@ support for every ROLI controller.
   clip. It follows only the selected track; it does not combine scales from multiple tracks.
 - Clip-scale API support requires a compatible host (introduced in Live 12.4.15b1).
   Older hosts can still follow Live's scale; missing clip metadata produces an explicit
-  fallback message when Clip scale is enabled.
+  fallback message when Follow clip scale is enabled.
 - Preferences are global, not recalled or automated per Live Set. Device-only changes may
   refresh automatically, but Python script updates still require a full Live restart.
 - Playback highlights use the Piano's native white feedback. Independent highlight color

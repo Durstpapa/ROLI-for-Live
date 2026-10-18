@@ -2,6 +2,37 @@
 
 ## Unreleased (fork)
 
+- Reduce status text to 9 points while retaining 10-point controls. Add a non-clickable,
+  theme-accent connection dot driven by reported keyboard readiness, with a neutral
+  unconfirmed/disconnected state and explicit status/error text retained.
+- Clarify the idle clip-following status as **Using Live scale** with **No playing clip**
+  on the next line, replacing **Live scale (no clip)** without changing scale selection.
+- Add native, theme-aware divider lines between the two brightness controls, between
+  the control columns and above status, without changing layout or control behavior.
+- Use consistent 10-point text throughout ROLI Controls, retaining the compact layout
+  and room for the longer button labels.
+- Move **Follow clip scale** directly below **Scale lighting**, ahead of Key colors,
+  Root color and **Show playing notes**. Rename the former Clip scale and Playing notes
+  buttons and clarify the clip-following
+  tooltip: playing clips supply their own Scale mode independently of the global switch,
+  with fallback to Live's global settings. Keep behavior, preferences and bridge wiring
+  unchanged; update generated-layout and confirmed-label regressions.
+- When the chosen Live/clip scale source has Scale mode OFF, send Chromatic along with
+  Show Scale OFF so native Rainbow stops filtering notes. Restore the selected scale
+  on re-enable without writing Live/clip metadata. Cover global toggles in all palettes
+  and clip-specific Rainbow toggles. User confirmed in Live that Scale mode OFF shows
+  the full rainbow and ON restores scale highlighting on Piano 49 (2026-10-18).
+- Add native Rainbow as the third Key colors choice (White → Track → Rainbow), retaining
+  Live/clip scale following, global brightness, playing-note feedback and native playing
+  mode selection. Preserve but disable Root color and Background Brightness in Rainbow,
+  which ignores custom RGB colors. Migrate settings schemas 1-4 to named palettes in
+  schema 5, retain legacy bridge methods, and add the v6 three-color bridge.
+- Add palette-cycle, migration, failure, scale/clip, reconnect and restoration regressions.
+  User confirmed native Rainbow scale highlighting and custom RGB limitations in
+  Dashboard on Piano 49 (2026-10-18). Initial integrated testing exposed the wrong native
+  scheme ID (3); use the Dashboard-observed Rainbow ID 4 and pin it in a regression test.
+  User confirmed corrected Rainbow follows scales and native lighting returns after
+  quitting on Piano 49 / Live 12.4.15b7. LUMI Rainbow remains unqualified on hardware.
 - Stop lighting callbacks and note feedback before shutdown restoration; explicitly
   release Piano 49 BLOCKS API mode after restoring captured settings, without cycling
   native modes or changing saved preferences. Report unverified restoration requests

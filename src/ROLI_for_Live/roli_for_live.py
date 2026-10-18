@@ -33,6 +33,8 @@ def mode_item(mode, offset):
 
 
 COLOR_TYPE_USER = 1
+COLOR_TYPE_RAINBOW = 4  # Rainbow scheme read back after the Dashboard hardware test.
+KEY_COLORS = ('white', 'track', 'rainbow')
 SHARED_LIGHTING_ITEMS = (SCALE, KEY, GLOBAL_KEY_COLOUR, ROOT_KEY_COLOUR, BRIGHTNESS)
 
 BUTTON_PREVIOUS = 3  # "<"
@@ -66,7 +68,7 @@ MIN_WRITE_INTERVAL_TICKS = 2
 
 SNAPSHOT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'device_snapshot.json')
 SETTINGS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
-DEFAULT_SETTINGS = dict(white_keys=True, scale_lighting=True, playing_notes=True, root_color=True,
+DEFAULT_SETTINGS = dict(key_colors='white', scale_lighting=True, playing_notes=True, root_color=True,
                         clip_scale=False, background_intensity=100, global_brightness=None)
 
 
@@ -144,24 +146,24 @@ class ROLIForLive(ControlSurface):
     def get_roli_lighting_state(self):
         """Versioned reply for the optional Max for Live controls."""
         ready = self._keyboard_ready()
-        return 'roli_lighting_v1 %d %d' % (int(self._settings['white_keys']), int(ready))
+        return 'roli_lighting_v1 %d %d' % (int(self._settings['key_colors'] == 'white'), int(ready))
 
     def get_roli_controls_state(self):
         ready = self._keyboard_ready()
         return 'roli_controls_v2 %d %d %d %d %d' % (
-            int(self._settings['white_keys']), int(self._settings['scale_lighting']),
+            int(self._settings['key_colors'] == 'white'), int(self._settings['scale_lighting']),
             int(self._settings['playing_notes']), int(ready), int(not self._settings_error))
 
     def get_roli_controls_state_v3(self):
         ready = self._keyboard_ready()
         return 'roli_controls_v3 %d %d %d %d %d %d' % (
-            int(self._settings['white_keys']), int(self._settings['scale_lighting']),
+            int(self._settings['key_colors'] == 'white'), int(self._settings['scale_lighting']),
             int(self._settings['playing_notes']), int(self._settings['root_color']),
             int(ready), int(not self._settings_error))
 
     def get_roli_controls_state_v4(self):
         return 'roli_controls_v4 %d %d %d %d %d %d %d %s' % (
-            int(self._settings['white_keys']), int(self._settings['scale_lighting']),
+            int(self._settings['key_colors'] == 'white'), int(self._settings['scale_lighting']),
             int(self._settings['playing_notes']), int(self._settings['root_color']),
             int(self._settings['clip_scale']), int(self._keyboard_ready()),
             int(not self._settings_error), self._scale_source_status)
@@ -173,6 +175,10 @@ class ROLIForLive(ControlSurface):
         return self.get_roli_controls_state_v4().replace('roli_controls_v4', 'roli_controls_v5', 1) + (
             ' %d %d' % (brightness, self._settings['background_intensity']))
 
+    def get_roli_controls_state_v6(self):
+        return self.get_roli_controls_state_v5().replace('roli_controls_v5', 'roli_controls_v6', 1) + (
+            ' ' + self._settings['key_colors'])
+
     def _keyboard_ready(self):
         return (self._serial is not None and self._snapshot is not None and self._mode is not None
                 and self._last_response is not None
@@ -181,6 +187,18 @@ class ROLIForLive(ControlSurface):
     def set_roli_white_keys(self, value):
         self._set_setting('white_keys', value)
         return self.get_roli_lighting_state()
+
+    def set_roli_key_colors(self, value):
+        if type(value) is not int or not 0 <= value < len(KEY_COLORS):
+            self.log_message('ROLI for Live: rejected key_colors value %r' % (value,))
+            raise ValueError('key_colors must be 0 (White), 1 (Track), or 2 (Rainbow)')
+        updated = dict(self._settings)
+        updated['key_colors'] = KEY_COLORS[value]
+        self._save_settings(updated)
+        self._settings = updated
+        self._update_lighting()
+        self.log_message('ROLI for Live: saved key_colors %s' % KEY_COLORS[value])
+        return self.get_roli_controls_state_v6()
 
     def set_roli_scale_lighting(self, value):
         self._set_setting('scale_lighting', value)
@@ -222,7 +240,10 @@ class ROLIForLive(ControlSurface):
             self.log_message('ROLI for Live: rejected %s value %r' % (name, value))
             raise ValueError('%s must be 0 or 1' % name)
         updated = dict(self._settings)
-        updated[name] = bool(value)
+        if name == 'white_keys':
+            updated['key_colors'] = 'white' if value else 'track'
+        else:
+            updated[name] = bool(value)
         self._save_settings(updated)
         self._settings = updated
         if name == 'playing_notes':
@@ -241,10 +262,13 @@ class ROLIForLive(ControlSurface):
             with open(SETTINGS_PATH) as file:
                 stored = json.load(file)
             if (not isinstance(stored, dict) or type(stored.get('version')) is not int
-                    or stored['version'] not in (1, 2, 3, 4)):
+                    or stored['version'] not in (1, 2, 3, 4, 5)):
                 raise ValueError('Invalid settings schema or version')
             fields = set(DEFAULT_SETTINGS)
             levels = {'background_intensity', 'global_brightness'}
+            if stored['version'] < 5:
+                fields.remove('key_colors')
+                fields.add('white_keys')
             if stored['version'] < 4:
                 fields -= levels
             if stored['version'] < 3:
@@ -252,15 +276,19 @@ class ROLIForLive(ControlSurface):
             if stored['version'] == 1:
                 fields.remove('root_color')
             if (set(stored) != fields | {'version'}
-                    or any(type(stored[name]) is not bool for name in fields - levels)):
+                    or any(type(stored[name]) is not bool for name in fields - levels - {'key_colors'})):
                 raise ValueError('Invalid settings schema or version')
-            if stored['version'] == 4 and (
+            if stored['version'] == 5 and stored['key_colors'] not in KEY_COLORS:
+                raise ValueError('Invalid key color setting')
+            if stored['version'] >= 4 and (
                     not _is_percent(stored['background_intensity'])
                     or (stored['global_brightness'] is not None
                         and not _is_percent(stored['global_brightness']))):
                 raise ValueError('Invalid brightness settings')
             settings = dict(DEFAULT_SETTINGS)
             settings.update((name, stored[name]) for name in fields)
+            if stored['version'] < 5:
+                settings['key_colors'] = 'white' if settings.pop('white_keys') else 'track'
             return settings
         except FileNotFoundError:
             return dict(DEFAULT_SETTINGS)
@@ -274,7 +302,7 @@ class ROLIForLive(ControlSurface):
             fd, temporary = tempfile.mkstemp(prefix='.roli-settings-', suffix='.tmp',
                                              dir=os.path.dirname(SETTINGS_PATH))
             with os.fdopen(fd, 'w') as file:
-                json.dump(dict(settings, version=4), file, sort_keys=True)
+                json.dump(dict(settings, version=5), file, sort_keys=True)
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(temporary, SETTINGS_PATH)
@@ -589,7 +617,8 @@ class ROLIForLive(ControlSurface):
                     self._write(item, value)
             return
         root, scale_on, intervals, name = self._scale_state()
-        index = builtin_index(intervals)
+        # Rainbow still uses the native scale mask with Show Scale off.
+        index = builtin_index(intervals) if scale_on else CHROMATIC
         if index is None:
             index = CHROMATIC
             if self._unsupported_scale_reported != name:
@@ -600,12 +629,19 @@ class ROLIForLive(ControlSurface):
         else:
             self._unsupported_scale_reported = None
         color = self._track_color()
-        self._write(mode_item(self._mode, _COLOR_TYPE), COLOR_TYPE_USER)
+        rainbow = self._settings['key_colors'] == 'rainbow'
+        self._write(mode_item(self._mode, _COLOR_TYPE),
+                    COLOR_TYPE_RAINBOW if rainbow else COLOR_TYPE_USER)
         self._write(mode_item(self._mode, _SHOW_SCALE), 1 if scale_on else 0)
         self._write(KEY, root)
         self._write(SCALE, index)
-        key_color = 0xFFFFFF if self._settings['white_keys'] else color
-        root_color = color if self._settings['white_keys'] else _brighter(color)
+        if rainbow:
+            for item in (GLOBAL_KEY_COLOUR, ROOT_KEY_COLOUR):
+                self._write(item, self._snapshot[item])
+            return
+        white_keys = self._settings['key_colors'] == 'white'
+        key_color = 0xFFFFFF if white_keys else color
+        root_color = color if white_keys else _brighter(color)
         root_color = root_color if self._settings['root_color'] else key_color
         intensity = self._settings['background_intensity'] / 100.0
         self._write(GLOBAL_KEY_COLOUR, _argb(_dim(key_color, intensity)))

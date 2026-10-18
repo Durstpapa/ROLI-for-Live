@@ -10,7 +10,7 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
     const script = boxes.find(b => b.text === "v8");
     const audioIn = boxes.find(b => b.text === "plugin~");
     const audioOut = boxes.find(b => b.text === "plugout~");
-    const toggle = boxes.find(b => b.varname === "white_keys");
+    const toggle = boxes.find(b => b.varname === "key_colors");
     const init = boxes.find(b => b.text === "live.thisdevice");
     const edges = p.lines.map(({ patchline: l }) => [...l.source, ...l.destination]);
     const hasEdge = (from, outlet, to, inlet) =>
@@ -23,19 +23,22 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
     assert.equal(toggle.saved_attribute_attributes.activebgcolor.expression, "themecolor.live_control_bg");
     assert.equal(toggle.saved_attribute_attributes.focusbordercolor.expression, "themecolor.live_focus_frame");
     const visible = boxes.filter(b => b.presentation === 1);
-    assert.equal(visible.length, 10, "five buttons, status, two sliders and their labels");
+    assert.equal(visible.length, 14, "five buttons, status and connection dot, two sliders and their labels, three dividers");
     assert.deepEqual(
         visible.filter(b => b.maxclass === "live.text")
             .sort((a, b) => a.presentation_rect[1] - b.presentation_rect[1])
             .map(b => b.varname),
-        ["scale_lighting", "white_keys", "root_color", "playing_notes", "clip_scale"],
+        ["scale_lighting", "clip_scale", "key_colors", "root_color", "playing_notes"],
         "requested top-to-bottom order must not change inlet/outlet semantics");
     assert.ok(!visible.some(b => /proof of concept|js2max|Live color switch/i.test(b.text)));
     for (const box of visible) {
         const [x, y, width, height] = box.presentation_rect;
         assert.ok(x >= 0 && y >= 0 && x + width <= 240 && y + height <= 169,
             "all presentation content fits the compact device strip");
-        assert.ok(box.fontsize >= 10 && box.fontsize <= 11, "stock-sized, readable text");
+        if (box.maxclass !== "live.line" && box.maxclass !== "led") {
+            assert.equal(box.fontsize, box.id === "roli-status" ? 9 : 10,
+                "compact status text leaves control and label text unchanged");
+        }
         if (box.maxclass === "comment") {
             assert.equal(box.saved_attribute_attributes.textcolor.expression, "themecolor.live_control_fg");
         }
@@ -48,9 +51,24 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
                 "visible controls and status must not overlap");
         }
     }
+    const dividers = visible.filter(b => b.maxclass === "live.line");
+    assert.deepEqual(dividers.map(b => [b.id, b.presentation_rect, b.orientation]), [
+        ["divider-columns", [138, 6, 1, 157], 0],
+        ["divider-brightness", [144, 73, 88, 1], 1],
+        ["divider-status", [8, 131, 124, 1], 1]
+    ], "native divider lines separate columns, brightness sections and status without moving controls");
+    for (const divider of dividers) {
+        assert.equal(divider.border, 1);
+        assert.equal(divider.justification, 1);
+        assert.equal(divider.ignoreclick, 1, "decorative dividers must not capture clicks");
+        assert.equal(divider.saved_attribute_attributes.linecolor.expression, "themecolor.live_contrast_frame");
+        assert.ok(!edges.some(e => e[0] === divider.id || e[2] === divider.id),
+            "dividers must not change control or audio routing");
+    }
     assert.equal(toggle.active, 0, "must wait for script confirmation");
     assert.equal(toggle.mode, 0, "momentary clicks must invert script state, not widget state");
     assert.equal(toggle.parameter_enable, 0, "POC must not restore a stale saved preference");
+    assert.match(toggle.annotation, /White, Track, Rainbow/);
     assert.ok(toggle.presentation_rect[2] >= 24 && toggle.presentation_rect[3] >= 24);
     assert.ok(!boxes.some(b => b.text === "midiin" || b.text === "midiout"));
     assert.equal(audioIn.numoutlets, 2);
@@ -62,8 +80,8 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
     assert.ok(hasEdge(toggle.id, 0, script.id, 1));
     assert.ok(hasEdge(script.id, 0, toggle.id, 0));
     assert.equal(script.numinlets, 8);
-    assert.equal(script.numoutlets, 8);
-    for (const [index, name] of ["white_keys", "scale_lighting", "playing_notes", "root_color", "clip_scale"].entries()) {
+    assert.equal(script.numoutlets, 9);
+    for (const [index, name] of ["key_colors", "scale_lighting", "playing_notes", "root_color", "clip_scale"].entries()) {
         const control = boxes.find(b => b.varname === name);
         assert.ok(hasEdge(control.id, 0, script.id, index + 1));
         assert.ok(hasEdge(script.id, index, control.id, 0));
@@ -73,6 +91,27 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
         assert.ok(control.presentation_rect[2] >= 24 && control.presentation_rect[3] >= 24);
     }
     assert.ok(hasEdge(script.id, 5, "roli-status", 0));
+    assert.ok(hasEdge(script.id, 8, "roli-connection", 0));
+    const connection = boxes.find(b => b.id === "roli-connection");
+    const status = boxes.find(b => b.id === "roli-status");
+    assert.equal(connection.maxclass, "led");
+    assert.equal(connection.ignoreclick, 1, "connection dot is not a control");
+    assert.equal(connection.parameter_enable, 0, "connection state must not be restored as a preference");
+    assert.equal(connection.saved_attribute_attributes.oncolor.expression, "themecolor.live_control_selection");
+    assert.equal(connection.saved_attribute_attributes.offcolor.expression, "themecolor.live_control_fg_off");
+    assert.equal(connection.saved_attribute_attributes.bgcolor.expression, "themecolor.live_surface_bg");
+    assert.deepEqual(connection.presentation_rect, [8, 137, 6, 6]);
+    assert.deepEqual(status.presentation_rect, [18, 133, 114, 36]);
+    assert.equal(status.linecount, 3, "fallback detail retains all three status lines");
+    assert.ok(!edges.some(e => e[0] === connection.id), "indicator must never send control commands");
+    const clipControl = boxes.find(b => b.varname === "clip_scale");
+    assert.equal(clipControl.text, "Follow clip scale");
+    assert.match(clipControl.annotation, /independently of Live's global Scale mode switch/);
+    assert.match(clipControl.annotation, /Falls back to Live's global scale settings/);
+    assert.equal(clipControl.presentation_rect[1], 31, "source override sits immediately below Scale lighting");
+    const notesControl = boxes.find(b => b.varname === "playing_notes");
+    assert.equal(notesControl.text, "Show playing notes");
+    assert.equal(notesControl.presentation_rect[1], 106, "note feedback is the last control");
     for (const [index, name] of ["global_brightness", "background_intensity"].entries()) {
         const slider = boxes.find(b => b.varname === name);
         const label = boxes.find(b => b.id === `label-${name}`);

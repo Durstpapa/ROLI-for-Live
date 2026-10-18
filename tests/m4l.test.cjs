@@ -41,17 +41,18 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
         }
         call(name, value) {
             assert.ok(this.id, "must not call a stale surface");
-            if (name === "get_roli_controls_state_v5") {
+            if (name === "get_roli_controls_state_v6") {
                 if (this.target.error) throw new Error(this.target.error);
                 if (this.target.reply) return this.target.reply;
-                return ["roli_controls_v5", this.target.white, this.target.scale ?? 1,
+                return ["roli_controls_v6", this.target.white ?? (this.target.colors === "white" ? 1 : 0), this.target.scale ?? 1,
                     this.target.notes ?? 1, this.target.root ?? 1, this.target.clip ?? 0,
                     this.target.ready, this.target.settingsOk === false ? 0 : 1,
                     this.target.source ?? (this.target.clip ? "clip" : "live"),
-                    this.target.brightness ?? 100, this.target.background ?? 100];
+                    this.target.brightness ?? 100, this.target.background ?? 100,
+                    this.target.colors ?? (this.target.white ? "white" : "track")];
             }
             const fields = {
-                set_roli_white_keys: "white",
+                set_roli_key_colors: "colors",
                 set_roli_scale_lighting: "scale",
                 set_roli_playing_notes: "notes",
                 set_roli_root_color: "root",
@@ -65,10 +66,14 @@ function setup({ retainRemovedIds = false, sliderRange = 100 } = {}) {
             if (this.target.failSave) {
                 this.target.settingsOk = false;
             } else if (!this.target.reject) {
-                this.target[fields[name]] = value;
+                this.target[fields[name]] = name === "set_roli_key_colors" ?
+                    ["white", "track", "rainbow"][value] : value;
+                if (name === "set_roli_key_colors") {
+                    this.target.white = value === 0 ? 1 : 0;
+                }
                 this.target.settingsOk = true;
             }
-            return this.call("get_roli_controls_state_v5");
+            return this.call("get_roli_controls_state_v6");
         }
     }
     class Task {
@@ -113,22 +118,139 @@ test("waits for live.thisdevice, then reads the script without changing it", () 
     assert.deepEqual(h.outputs.find(o => o[1] === "text" && o[0] === 0), [0, "text", "Key colors: Track"]);
 });
 
-test("repeated identical button clicks alternate both ways from confirmed script state", () => {
+test("connection dot follows confirmed readiness without hiding status or clip-source errors", () => {
+    const h = setup();
+    const surface = { id: 7, ready: 0, clip: 1, source: "idle" };
+    const dot = () => h.outputs.filter(o => o[0] === 8 && o[1] === "set").at(-1)?.[2];
+    h.surfaces([surface]);
+    assert.equal(dot(), undefined, "no connection is claimed before Live API initialization");
+    h.context.bang();
+    assert.equal(dot(), 0);
+    assert.equal(h.status(), "Disconnected");
+    surface.ready = 1;
+    h.context.refresh();
+    assert.equal(dot(), 1);
+    assert.equal(h.status(), "Connected\nUsing Live scale\nNo playing clip");
+    for (const source of ["unsupported", "error"]) {
+        surface.source = source;
+        h.context.refresh();
+        assert.equal(dot(), 1, "clip fallback does not imply disconnection");
+        assert.match(h.status(), /Connected\nClip scale (unavailable|read error)\nUsing Live scale/);
+    }
+    surface.settingsOk = false;
+    h.context.refresh();
+    assert.equal(dot(), 1, "a settings-file error does not imply disconnection");
+    assert.match(h.status(), /Settings file error/);
+    surface.error = "Live API unavailable";
+    h.context.refresh();
+    assert.equal(dot(), 0, "a stale connection must not stay accented after API failure");
+    assert.equal(h.status(), "Live API unavailable");
+    delete surface.error;
+    surface.settingsOk = true;
+    surface.source = "clip";
+    h.context.refresh();
+    assert.equal(dot(), 1);
+    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    h.surfaces([]);
+    h.context.refresh();
+    assert.equal(dot(), 0);
+    assert.equal(h.status(), "Disconnected");
+    assert.deepEqual(h.writes, [], "connection feedback must never change saved settings");
+});
+
+test("Rainbow displays confirmed state, disables custom lighting controls, and restores them on White", () => {
+    const h = setup();
+    const surface = { id: 7, colors: "rainbow", ready: 1, clip: 1, root: 0, background: 25 };
+    h.surfaces([surface]);
+    h.context.bang();
+    assert.equal(h.label(), "Key colors: Rainbow");
+    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.equal(h.label(3), "Root color: OFF");
+    assert.equal(h.label(4), "Follow clip scale: ON");
+    for (const [index, active] of [[0, 1], [1, 1], [2, 1], [3, 0], [4, 1], [6, 1], [7, 0]]) {
+        assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1),
+            [index, "active", active]);
+    }
+    assert.deepEqual(h.writes, [], "loading Rainbow must not apply defaults");
+    h.level(6, 70);
+    h.flush();
+    assert.deepEqual(h.commands, [["set_roli_global_brightness", 70]]);
+    h.click();
+    assert.equal(h.label(), "Key colors: White");
+    for (const index of [3, 4, 7]) {
+        assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1),
+            [index, "active", 1]);
+    }
+    assert.equal(surface.clip, 1);
+    assert.equal(surface.root, 0);
+    assert.equal(surface.background, 25);
+});
+
+test("Rainbow choice survives scale lighting off and on", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, colors: "rainbow", ready: 1 }]);
+    h.context.bang();
+    h.click(2);
+    assert.equal(h.label(), "Key colors: Rainbow");
+    assert.match(h.status(), /Native colors restored/);
+    h.click(2);
+    assert.equal(h.status(), "Connected");
+    assert.deepEqual(h.commands, [["set_roli_scale_lighting", 0], ["set_roli_scale_lighting", 1]]);
+});
+
+test("a deferred background write cannot change saved preferences after switching to Rainbow", () => {
+    const h = setup();
+    const surface = { id: 7, white: 1, ready: 1, background: 25 };
+    h.surfaces([surface]);
+    h.context.bang();
+    h.level(7, 60);
+    surface.colors = "rainbow";
+    h.flush();
+    assert.match(h.status(), /Background control unavailable/);
+    assert.equal(surface.background, 25);
+    assert.deepEqual(h.writes, []);
+});
+
+test("Rainbow rejects stale root-color events but allows Clip scale changes", () => {
+    const h = setup();
+    h.surfaces([{ id: 7, colors: "rainbow", ready: 1, root: 1, clip: 0 }]);
+    h.context.bang();
+    h.click(4);
+    assert.match(h.status(), /Control unavailable/);
+    assert.deepEqual(h.writes, []);
+    h.context.refresh();
+    h.click(5);
+    assert.equal(h.label(4), "Follow clip scale: ON");
+    assert.equal(h.status(), "Connected\nPlaying clip scale");
+    assert.deepEqual(h.commands, [["set_roli_clip_scale", 1]]);
+});
+
+test("Rainbow still reports clip-scale fallback and read failures", () => {
+    for (const [source, message] of [["unsupported", /Clip scale unavailable/], ["error", /Clip scale read error/]]) {
+        const h = setup();
+        h.surfaces([{ id: 7, colors: "rainbow", ready: 1, clip: 1, source }]);
+        h.context.bang();
+        assert.match(h.status(), message);
+        assert.deepEqual(h.writes, []);
+    }
+});
+
+test("repeated identical button clicks cycle Track, Rainbow, White from confirmed script state", () => {
     const h = setup();
     h.context.bang();
     h.click();
-    assert.deepEqual(h.writes, [1]);
-    assert.equal(h.label(), "Key colors: White");
-    assert.deepEqual(h.outputs.filter(o => o[0] === 0 && o[1] === "text").at(-1), [0, "text", "Key colors: White"]);
+    assert.deepEqual(h.writes, [2]);
+    assert.equal(h.label(), "Key colors: Rainbow");
+    assert.deepEqual(h.outputs.filter(o => o[0] === 0 && o[1] === "text").at(-1), [0, "text", "Key colors: Rainbow"]);
     h.context.refresh();
     h.click();
-    assert.equal(h.label(), "Key colors: Track");
-    assert.deepEqual(h.writes, [1, 0]);
+    assert.equal(h.label(), "Key colors: White");
+    assert.deepEqual(h.writes, [2, 0]);
     for (let i = 0; i < 6; i++) {
         h.context.refresh();
         h.click();
     }
-    assert.deepEqual(h.writes, [1, 0, 1, 0, 1, 0, 1, 0]);
+    assert.deepEqual(h.writes, [2, 0, 1, 2, 0, 1, 2, 0]);
     assert.equal(h.tasks.length, 1, "clicks must not restart the polling task");
 });
 
@@ -141,7 +263,7 @@ test("white-keys startup default is displayed without a write and the first clic
         [0, "text", "Key colors: White"]);
     assert.equal(h.status(), "Connected");
     h.click();
-    assert.deepEqual(h.writes, [0]);
+    assert.deepEqual(h.writes, [1]);
     assert.equal(h.label(), "Key colors: Track");
 });
 
@@ -199,7 +321,7 @@ test("polling rejects a removed surface even when its old API object retains a v
 
 test("accepts a generic ControlSurface only when its API advertises the bridge", () => {
     const h = setup();
-    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v5", white: 0, ready: 1 }]);
+    h.surfaces([{ id: 1, type: "ControlSurface", info: "function get_roli_controls_state_v6", white: 0, ready: 1 }]);
     h.context.bang();
     assert.equal(h.status(), "Connected");
 });
@@ -229,7 +351,7 @@ test("power-off and reconnection update status on the same live script without c
     surface.ready = 0;
     h.tasks[0].fn();
     assert.equal(h.status(), "Disconnected");
-    assert.equal(h.label(2), "Playing notes: OFF");
+    assert.equal(h.label(2), "Show playing notes: OFF");
     assert.equal(h.label(3), "Root color: OFF");
     surface.ready = 1;
     h.tasks[0].fn();
@@ -243,7 +365,10 @@ test("invalid or old script replies fail explicitly before any write", () => {
         ["roli_controls_v4", 2, 1, 1, 1, 0, 1, 1, "live"],
         ["roli_controls_v4", 1, 1, 1, 1, 0, 1, 1, "unknown"],
         ["roli_controls_v5", 1, 1, 1, 1, 0, 1, 1, "live", 101, 25],
-        ["roli_controls_v5", 1, 1, 1, 1, 0, 1, 1, "live", 100, -1]
+        ["roli_controls_v5", 1, 1, 1, 1, 0, 1, 1, "live", 100, -1],
+        ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 101, 25, "white"],
+        ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 100, -1, "white"],
+        ["roli_controls_v6", 1, 1, 1, 1, 0, 1, 1, "live", 100, 25, "invalid"]
     ]) {
         const h = setup();
         h.surfaces([{ id: 7, reply }]);
@@ -271,7 +396,7 @@ test("a click inverts externally changed state, even before the next poll", () =
     h.context.bang();
     h.surfaces([{ id: 8, white: 1, ready: 1 }]);
     h.click();
-    assert.deepEqual(h.writes, [0]);
+    assert.deepEqual(h.writes, [1]);
     assert.equal(h.label(), "Key colors: Track");
 });
 
@@ -280,16 +405,16 @@ test("scale and playing-note switches are independent and preserve the saved col
     h.context.bang();
     h.click(2);
     assert.equal(h.label(1), "Scale lighting: OFF");
-    assert.equal(h.label(2), "Playing notes: ON");
+    assert.equal(h.label(2), "Show playing notes: ON");
     assert.equal(h.label(), "Key colors: Track");
     assert.deepEqual(h.outputs.filter(o => o[0] === 0 && o[1] === "active").at(-1), [0, "active", 0]);
     assert.match(h.status(), /Native colors restored/);
     h.click(3);
-    assert.equal(h.label(2), "Playing notes: OFF");
+    assert.equal(h.label(2), "Show playing notes: OFF");
     assert.equal(h.label(1), "Scale lighting: OFF");
     h.click(2);
     assert.equal(h.label(1), "Scale lighting: ON");
-    assert.equal(h.label(2), "Playing notes: OFF");
+    assert.equal(h.label(2), "Show playing notes: OFF");
     assert.equal(h.label(), "Key colors: Track");
     assert.deepEqual(h.commands, [
         ["set_roli_scale_lighting", 0], ["set_roli_playing_notes", 0], ["set_roli_scale_lighting", 1]
@@ -302,7 +427,7 @@ test("loading saved settings never writes defaults back to the script", () => {
     h.context.bang();
     assert.equal(h.label(), "Key colors: Track");
     assert.equal(h.label(1), "Scale lighting: OFF");
-    assert.equal(h.label(2), "Playing notes: OFF");
+    assert.equal(h.label(2), "Show playing notes: OFF");
     assert.equal(h.label(3), "Root color: OFF");
     assert.deepEqual(h.writes, []);
 });
@@ -320,7 +445,7 @@ test("root-color clicks alternate independently and the control follows scale-li
     h.click(2);
     assert.equal(h.label(3), "Root color: ON", "retain the saved choice while native lighting is restored");
     assert.deepEqual(h.outputs.filter(o => o[0] === 3 && o[1] === "active").at(-1), [3, "active", 0]);
-    assert.equal(h.label(2), "Playing notes: ON");
+    assert.equal(h.label(2), "Show playing notes: ON");
     h.click(2);
     assert.deepEqual(h.outputs.filter(o => o[0] === 3 && o[1] === "active").at(-1), [3, "active", 1]);
 });
@@ -354,14 +479,14 @@ test("reinitialization and deletion cancel polling", () => {
 test("clip-scale control alternates confirmed state independently and never writes on load", () => {
     const h = setup();
     h.context.bang();
-    assert.equal(h.label(4), "Clip scale: OFF");
+    assert.equal(h.label(4), "Follow clip scale: OFF");
     assert.deepEqual(h.writes, []);
     h.click(5);
-    assert.equal(h.label(4), "Clip scale: ON");
+    assert.equal(h.label(4), "Follow clip scale: ON");
     assert.equal(h.status(), "Connected\nPlaying clip scale");
-    assert.equal(h.label(2), "Playing notes: ON");
+    assert.equal(h.label(2), "Show playing notes: ON");
     h.click(5);
-    assert.equal(h.label(4), "Clip scale: OFF");
+    assert.equal(h.label(4), "Follow clip scale: OFF");
     assert.equal(h.status(), "Connected");
     assert.deepEqual(h.commands, [["set_roli_clip_scale", 1], ["set_roli_clip_scale", 0]]);
     assert.equal(h.tasks.length, 1);
@@ -372,8 +497,8 @@ test("clip-scale source and fallback messages remain explicit and recover automa
     const surface = { id: 7, white: 1, clip: 1, ready: 1, source: "idle" };
     h.surfaces([surface]);
     h.context.bang();
-    assert.equal(h.label(4), "Clip scale: ON");
-    assert.equal(h.status(), "Connected\nLive scale (no clip)");
+    assert.equal(h.label(4), "Follow clip scale: ON");
+    assert.equal(h.status(), "Connected\nUsing Live scale\nNo playing clip");
     for (const [source, label] of [
         ["unsupported", "Clip scale unavailable"], ["error", "Clip scale read error"]
     ]) {
@@ -398,13 +523,13 @@ test("scale lighting off preserves clip source choice while disabling its contro
     const h = setup();
     h.surfaces([{ id: 7, white: 1, scale: 0, clip: 1, ready: 1, source: "off" }]);
     h.context.bang();
-    assert.equal(h.label(4), "Clip scale: ON");
+    assert.equal(h.label(4), "Follow clip scale: ON");
     assert.deepEqual(h.outputs.filter(o => o[0] === 4 && o[1] === "active").at(-1),
         [4, "active", 0]);
     h.click(2);
     assert.deepEqual(h.outputs.filter(o => o[0] === 4 && o[1] === "active").at(-1),
         [4, "active", 1]);
-    assert.equal(h.label(4), "Clip scale: ON");
+    assert.equal(h.label(4), "Follow clip scale: ON");
 });
 
 test("failed clip setting saves never confirm a successful change", () => {
@@ -413,7 +538,7 @@ test("failed clip setting saves never confirm a successful change", () => {
     h.context.bang();
     h.click(5);
     assert.match(h.status(), /Settings were not saved/);
-    assert.equal(h.label(4), "Clip scale: OFF");
+    assert.equal(h.label(4), "Follow clip scale: OFF");
     assert.deepEqual(h.commands, [["set_roli_clip_scale", 1]]);
 });
 
