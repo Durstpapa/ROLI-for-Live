@@ -57,7 +57,7 @@ function disableControls() {
 function reportError(text, connected) {
     status(text, connected);
     if (text !== lastError) {
-        post("ROLI Controls: " + text + "\n");
+        post("ROLI Piano Controls: " + text + "\n");
         lastError = text;
     }
 }

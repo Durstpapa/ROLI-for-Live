@@ -426,7 +426,7 @@ class SettingsTests(SurfaceTestCase):
         tick(surface, 10)
         self.assertEqual(DEVICE[34], roli_for_live._argb(self.track.color))
 
-    def test_scale_off_survives_keyboard_mode_change_without_touching_expression(self):
+    def test_scale_off_survives_keyboard_mode_change_without_undoing_expression(self):
         fake.SERIAL_REPLY = fake.serial_reply(b'LKB000000000TEST')
         DEVICE[20] = 1
         for mode in range(4):
@@ -445,12 +445,13 @@ class SettingsTests(SurfaceTestCase):
         self.assertEqual(DEVICE[118], 0)
         self.assertEqual(DEVICE[34], self.original[34])
         self.assertEqual(DEVICE[35], self.original[35])
-        self.assertTrue(all(DEVICE[100 + 7 * mode + offset] == 0
+        self.assertTrue(all(DEVICE[100 + 7 * mode + offset] == int(mode == 2)
                             for mode in range(4) for offset in (1, 2, 3)))
         surface.set_roli_scale_lighting(1)
         tick(surface, 10)
         self.assertEqual(DEVICE[114], 1)
         self.assertEqual(DEVICE[118], 1)
+        self.assertEqual([DEVICE[115], DEVICE[116], DEVICE[117]], [1, 1, 1])
 
     def test_legacy_settings_migrate_without_resetting_other_choices(self):
         legacy = dict(version=1, white_keys=False, scale_lighting=False, playing_notes=False)

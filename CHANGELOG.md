@@ -2,6 +2,20 @@
 
 ## Unreleased (fork)
 
+- Rename the optional Audio Effect to **ROLI Piano Controls**, including generated
+  device/patch filenames, Max console messages and current user-facing documentation.
+  Remove obsolete generated filenames after a successful build. Keep the Remote Script,
+  source filename, bridge methods and saved preferences compatible with existing setups.
+- Enable experimental Piano M/LUMI native pitch-bend and pressure controls after the
+  user confirmed both switches in Dashboard. Use the existing per-mode expression
+  capture, persistence and restoration path; keep API mode and unverified buttons off.
+  Add simulated LUMI expression coverage across all four native modes. The user confirmed
+  independent pitch-bend and pressure switching on both joined units and restoration of
+  their original expression settings after normal Live quit (2026-10-18).
+- Record user confirmation that two LUMIs joined via side connectors with one USB
+  connection both follow lighting controls and both return to native lighting after
+  Live quits (2026-10-18). Rainbow is also user-confirmed on the joined LUMIs.
+  This does not establish separate-USB multi-keyboard support.
 - Combine connection and scale/error status on one 10-point line, vertically centering
   the text and connection dot together in the full-width footer. Remove the separate
   connection text object; preserve complete annotations and connection-state semantics.

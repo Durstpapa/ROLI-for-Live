@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { compile } from "js2max/dist/compiler/generator.js";
 import { buildAmxd } from "js2max/dist/amxd/writer.js";
@@ -35,8 +35,8 @@ export async function build() {
         "Controls Live's note feedback and playing-clip highlighting, not the Piano's native touch/pressure lighting.",
         "Off makes root keys match the other lit keys, without changing notes or scale membership. Used when Scale lighting is on with White or Track colors; saved but inactive in Rainbow.",
         "On follows the selected track's playing MIDI clip root, scale and Scale mode independently of Live's global Scale mode switch. Falls back to Live's global scale settings when no applicable clip plays or clip-scale API is unavailable. Off always follows Live's global scale settings. Requires Live 12.4.15b1 or newer. Used when Scale lighting is on, including Rainbow.",
-        "Enables or disables native pitch bend on a connected Piano 49. Independent of lighting and pressure; MPE remains enabled. Saved across restarts. Previous native settings are restored on script shutdown. Unavailable on unverified Piano M/LUMI profiles.",
-        "Enables or disables native pressure (aftertouch) on a connected Piano 49, not note velocity. Independent of lighting and pitch bend; MPE remains enabled. Saved across restarts. Previous native settings are restored on script shutdown. Unavailable on unverified Piano M/LUMI profiles."
+        "Enables or disables native pitch bend on a connected supported keyboard. Independent of lighting and pressure; MPE remains enabled. Saved across restarts. Previous native settings are restored on script shutdown. Piano M/LUMI support is experimental.",
+        "Enables or disables native pressure (aftertouch) on a connected supported keyboard, not note velocity. Independent of lighting and pitch bend; MPE remains enabled. Saved across restarts. Previous native settings are restored on script shutdown. Piano M/LUMI support is experimental."
     ];
     controls.forEach((control, index) => {
         const outlet = index < 5 ? index : index + 4;
@@ -164,12 +164,15 @@ export async function build() {
         editing_bgcolor: { expression: "themecolor.live_surface_bg" }
     };
     await mkdir(outputDir, { recursive: true });
-    await writeFile(`${outputDir}/ROLI Controls.maxpat`, JSON.stringify(patch, null, 2));
-    await writeFile(`${outputDir}/ROLI Controls.amxd`, buildAmxd(patch, "audio-effect", "ROLI Controls.amxd"));
+    await writeFile(`${outputDir}/ROLI Piano Controls.maxpat`, JSON.stringify(patch, null, 2));
+    await writeFile(`${outputDir}/ROLI Piano Controls.amxd`, buildAmxd(patch, "audio-effect", "ROLI Piano Controls.amxd"));
+    for (const name of ["ROLI Controls.maxpat", "ROLI Controls.amxd"]) {
+        await rm(`${outputDir}/${name}`, { force: true });
+    }
     return patch;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     await build();
-    console.log(`Built ${outputDir}/ROLI Controls.amxd`);
+    console.log(`Built ${outputDir}/ROLI Piano Controls.amxd`);
 }

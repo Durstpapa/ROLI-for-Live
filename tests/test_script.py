@@ -250,7 +250,7 @@ def config_packet(item, value):
 
 
 def test_lumi():
-    """Experimental LUMI profile: lights only, in the keyboard's active mode."""
+    """Experimental LUMI lighting/expression in the active mode, without API buttons."""
     global SERIAL_REPLY
     SERIAL_REPLY = serial_reply(b'LKB000000000TEST')
     DEVICE.clear()
@@ -271,21 +271,27 @@ def test_lumi():
     assert COMMANDS == [], 'no API mode / ping for LUMI: %r' % COMMANDS
     assert DEVICE[107] == 1 and DEVICE[111] == 1, 'mode 1 colour type / show scale'
     assert DEVICE[100] == 0 and DEVICE[104] == 0, 'mode 0 untouched'
-    assert all(DEVICE[i] == 0 for i in (108, 109, 110)), 'no expression writes'
+    assert all(DEVICE[i] == 1 for i in (108, 109, 110)), 'native MPE / bend / pressure default on'
     assert s.get_roli_lighting_state() == 'roli_lighting_v1 1 1', 'new script instances default to white keys'
     assert DEVICE[27] == 0 and DEVICE[22] == 0 and DEVICE[34] == roli_for_live._argb(0xFFFFFF)
     assert DEVICE[35] == roli_for_live._argb(0xFF3B30)
 
     s.handle_sysex(button_packet(4))
     assert song.view.selected_track is t1, 'buttons are not mapped on LUMI'
+    s.set_roli_pitch_bend(0)
+    s.set_roli_pressure(0)
+    tick(s, 2)
+    assert [DEVICE[i] for i in (108, 109, 110)] == [1, 0, 0], 'expression toggles keep MPE on'
 
     # user switches the LUMI to mode 2: mode 1 gets its settings back, mode 2 is driven instead
     DEVICE[20] = 2
     s.handle_sysex(config_packet(20, 2))
     run_device(s)
     assert DEVICE[107] == 0 and DEVICE[111] == 0, 'mode 1 restored'
+    assert all(DEVICE[i] == 0 for i in (108, 109, 110)), 'mode 1 native expression restored'
     tick(s, 60)
     assert DEVICE[114] == 1 and DEVICE[118] == 1, 'mode 2 now driven'
+    assert [DEVICE[i] for i in (115, 116, 117)] == [1, 0, 0], 'saved expression follows mode 2'
 
     s.disconnect()
     run_device(s)

@@ -431,6 +431,7 @@ test("missing connection shows neutral status and reconnects automatically", () 
     h.surfaces([]);
     h.context.bang();
     assert.equal(h.connection(), "Disconnected");
+    assert.match(h.logs[0], /^ROLI Piano Controls: Disconnected/);
     for (let index = 0; index < 5; index++) {
         assert.deepEqual(h.outputs.filter(o => o[0] === index && o[1] === "active").at(-1), [index, "active", 0]);
     }

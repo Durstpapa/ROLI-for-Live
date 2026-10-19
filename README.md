@@ -20,7 +20,7 @@
 **ROLI for Live — ROLI Piano integration** is a small MIDI Remote Script that runs inside
 Ableton Live and turns a ROLI Piano keyboard into a Push-style partner for Live.
 No extra app, no driver, no Max for Live, and
-nothing to add to your Live Sets for the core integration. The optional **ROLI Controls**
+nothing to add to your Live Sets for the core integration. The optional **ROLI Piano Controls**
 device uses Max for Live to adjust and save lighting and native expression preferences.
 
 **Hardware scope:** tested on **ROLI Piano 49**, not a general integration for all ROLI
@@ -38,15 +38,16 @@ integration.** See the [compatibility matrix](#compatibility).
 | 🎨 **Track colors** | White keys with roots in the selected track's color by default; optional live controls switch to track-colored keys with brighter roots. |
 | ✨ **Playing notes** | Keys light white as the selected track's clip plays (Session and Arrangement). |
 | ⏮️⏭️ **Track buttons** | The keyboard's `<` / `>` buttons select the previous/next track. |
-| 🎹 **Native MPE** | Performance MIDI goes straight into Live; the script does not filter your notes. On Piano 49, native pitch bend and pressure default to ON and can be switched independently. MPE stays enabled. |
+| 🎹 **Native MPE** | Performance MIDI goes straight into Live; the script does not filter your notes. Native pitch bend and pressure default to ON and can be switched independently on Piano 49 and the experimental Piano M/LUMI profile. MPE stays enabled. |
 | ↩️ **Native lighting handoff** | Requests restoration of captured lighting settings when Live closes, then releases API mode on Piano 49. Automatic native-lighting return is user-confirmed on Piano 49. |
 
 ### What this fork adds
 
-The optional **ROLI Controls** device has five lighting buttons, in this order: **Scale lighting,
+The optional **ROLI Piano Controls** device has five lighting buttons, in this order: **Scale lighting,
 Follow clip scale, Key colors, Root color, Show playing notes**, plus **Global Brightness** and
 **Background Brightness** sliders alongside them. A separate **Expression** column adds
-**Pitch bend** and **Pressure** switches for Piano 49. Settings survive Live restarts, even
+**Pitch bend** and **Pressure** switches for Piano 49 and the experimental Piano M/LUMI
+profile. Settings survive Live restarts, even
 when the controls device is not loaded. The device shows connection/source status and
 reconnects automatically when the keyboard becomes available.
 Native, theme-aware divider lines separate the columns, the two brightness controls,
@@ -132,7 +133,7 @@ pitch bend range to **48** to match the keyboard.
 
 ## Optional live controls (experimental)
 
-The code-first **ROLI Controls** Max for Live Audio Effect provides seven buttons and two sliders.
+The code-first **ROLI Piano Controls** Max for Live Audio Effect provides seven buttons and two sliders.
 It passes stereo audio straight through without processing, and can sit on the Master/Main
 track inside an Audio Effect Rack with your other default devices. Its controls operate
 globally; scale and playing-note lighting still follow the selected MIDI track, not the
@@ -149,8 +150,8 @@ The controls are:
 | **Show playing notes: ON / OFF** | Independently enables/disables temporary white highlights for sounding clip notes and Live's note feedback. It does not switch root-note coloring off. Turning it off clears feedback notes; normal performance MIDI is unaffected. |
 | **Global Brightness (%): 0-100** | Native global LED brightness, including playback highlights. Initially reads the keyboard's current value without changing it. Once adjusted, saves and reapplies your choice, including with Scale lighting off. Zero turns the LEDs off, not performance MIDI. |
 | **Background Brightness (%): 0-100** | Scales background and root RGB channels relative to native playback highlights in White and Track. Saved but inactive in Rainbow, which ignores custom RGB colors. Requires Scale lighting on; 25 gives the hardware-tested dim background. Zero removes custom background colors but does not disable notes. This is not calibrated perceptual brightness. |
-| **Pitch bend: ON / OFF** | Saves and requests native pitch-bend enable/disable on a connected Piano 49. Independent of pressure, lighting and palette; MPE remains enabled. Unavailable on unverified Piano M/LUMI profiles. |
-| **Pressure: ON / OFF** | Saves and requests native pressure (aftertouch) enable/disable on a connected Piano 49, not note velocity. Independent of pitch bend, lighting and palette; MPE remains enabled. Unavailable on unverified Piano M/LUMI profiles. |
+| **Pitch bend: ON / OFF** | Saves and requests native pitch-bend enable/disable on a connected supported keyboard. Independent of pressure, lighting and palette; MPE remains enabled. Piano M/LUMI expression support is experimental. |
+| **Pressure: ON / OFF** | Saves and requests native pressure (aftertouch) enable/disable on a connected supported keyboard, not note velocity. Independent of pitch bend, lighting and palette; MPE remains enabled. Piano M/LUMI expression support is experimental. |
 
 Without saved preferences, the defaults are **White**, **Scale lighting ON**,
 **Follow clip scale OFF**, **Show playing notes ON**, **Root color ON**, **Background 100%**,
@@ -174,7 +175,7 @@ Color and Root Key Color on Piano 49 (2026-10-18). Integration switching, restor
 and scale following were subsequently confirmed on Piano 49 / Live 12.4.15b7, including
 native-lighting return after quitting with Rainbow active. The integrated scheme uses
 Dashboard-observed Rainbow ID 4; the initial ID 3 trial did not honor scales.
-LUMI/Piano M Rainbow still requires separate hardware verification.
+The user also confirmed Rainbow works on both joined LUMIs (2026-10-18).
 
 Requires Max for Live and **Max 9** (the device uses `v8` JavaScript). This is an
 experimental fork feature, not included in the upstream release downloads.
@@ -188,11 +189,16 @@ experimental fork feature, not included in the upstream release downloads.
    npm run test:m4l
    ```
 3. Start Live with the ROLI control surface enabled. Drag
-   `dist/m4l/ROLI Controls.amxd` onto the Master/Main track, an audio track, or a MIDI
+   `dist/m4l/ROLI Piano Controls.amxd` onto the Master/Main track, an audio track, or a MIDI
    track after its instrument. It can be grouped with other audio effects in an Audio
    Effect Rack. Save the rack in your default Live Set to load it with new projects.
 4. Wait for **Connected**, then use the buttons and sliders. No script reinstall or Live restart
    is needed for subsequent changes.
+
+The device was previously named **ROLI Controls**. Builds now generate **ROLI Piano Controls**
+and remove the old generated filenames. Replace older device instances embedded in racks
+or Live Sets and resave them to retain the new device name; the Remote Script, bridge
+methods and saved preferences are unchanged.
 
 If upgrading from the MIDI Effect version, remove that instance and load the newly built
 Audio Effect instead; existing Sets and saved racks retain their embedded older device.
@@ -275,15 +281,21 @@ Both switches work with Scale lighting off and in Rainbow. Choices are global an
 Live restarts even without the controls device loaded; duplicated devices show the same
 accepted preferences rather than creating independent expression settings.
 
-Expression controls require a connected Piano 49. They are disabled and show **N/A** on
-Piano M/LUMI, whose native expression configuration remains unverified and untouched.
+Expression controls require a connected supported keyboard. Piano M/LUMI support is
+experimental: the user confirmed that Dashboard exposes both native expression switches,
+so the `LKB` profile now reads, captures and configures the same per-mode expression
+items as Piano 49. It still does not enter API mode or enable unverified button mappings.
+The saved global expression choices also apply to LUMI; they default to ON if absent.
+Unsupported profiles show **N/A**, and controls remain disabled until initialization completes.
 The script captures the supported keyboard's native MPE, pitch-bend and pressure settings
 before changing them, and requests restoration on shutdown or before a native mode change.
 Turning Scale lighting off restores only lighting, not expression.
 Older recovery snapshots that lack expression fields are extended with the currently
 observed native values; earlier, uncaptured expression settings cannot be reconstructed.
-These new expression switches have simulated-host regression coverage; hardware validation
-of the independent OFF states is still pending.
+These expression switches have simulated-host regression coverage, including all four
+native modes on LUMI. The user confirmed independent pitch-bend and pressure switching
+on both units of a joined LUMI pair, plus restoration of their original expression
+settings after quitting Live normally (2026-10-18).
 
 ### Connection status
 
@@ -433,8 +445,11 @@ are unchanged. Logs describe requests, not verified hardware restoration; reject
 restore sends retain the recovery snapshot. The user confirmed native lighting returns
 automatically on Piano 49 / Live 12.4.15b7 after quitting with Scale lighting left ON
 (2026-10-17); turning it off manually before quitting is not required on that tested
-setup. LUMI/Piano M shutdown restoration and crash/power-loss recovery are not covered
-by that confirmation. This change cannot reconstruct native settings already altered;
+setup. The user separately confirmed native lighting restoration on both units of a
+joined two-LUMI pair after quitting Live (2026-10-18). A subsequent test also confirmed
+native expression restoration on both units after normal quit. Crash/power-loss recovery
+is not covered by those confirmations.
+This change cannot reconstruct native settings already altered;
 restore those in Dashboard with Live closed.
 
 | What you see | What to check |
@@ -514,7 +529,7 @@ This confirms the baseline, not rollback from a custom program (none was uploade
 | | Status |
 |---|---|
 | ROLI Piano 49, firmware 1.5.0 | ✅ Tested |
-| ROLI Piano M (formerly LUMI Keys) | ✅ User-confirmed on a LUMI Keys unit with macOS / Live 12.4.15b7 (2026-10-17). Uses the existing lighting profile; buttons and expression configuration left alone. Select the script manually. |
+| ROLI Piano M (formerly LUMI Keys) | ✅ Lighting and connection status user-confirmed on LUMI Keys; joined-pair lighting, independent expression switches and normal-quit lighting/expression restoration confirmed on both units (2026-10-18). Profile remains experimental; button mappings remain disabled. Select the script manually. |
 | Ableton Live 12.4.6 Suite, Windows 11 | ✅ Original core integration tested; not evidence for the newer fork controls or clip-scale API. |
 | Ableton Live 12.4.15b7, macOS, Piano 49 | ✅ Fork controls, persistence, disconnection detection, empty Arrangement clip-scale transitions and both brightness sliders user-confirmed. |
 | Other Live 12 editions (Intro, Standard) | Core integration expected to work, untested. Optional controls require an edition with Max for Live support. |
@@ -525,9 +540,15 @@ This confirms the baseline, not rollback from a custom program (none was uploade
 The LUMI Keys test used the existing `LKB` profile (still labeled experimental in
 runtime diagnostics). The user reported that everything worked; Live's log confirms
 recognition and accepted brightness adjustments. The user also confirmed correct
-connection-status detection when powering the LUMI off and on. Lighting/state restoration
-after reconnect, script-shutdown restoration and recovery scenarios were not separately
-qualified on this unit.
+connection-status detection when powering the LUMI off and on. On 2026-10-18, the user
+confirmed that two LUMIs joined through their side connectors and one USB connection
+both respond to lighting controls and both return to native lighting after Live quits.
+macOS exposes one LUMI MIDI input/output for this setup; keep one ROLI for Live
+control-surface entry, not one entry per joined unit. This does not qualify two separately
+USB-connected keyboards or independent per-unit native-setting restoration.
+The user also confirmed independent pitch-bend and pressure switching on both joined
+units and restoration of their original expression settings after quitting Live normally
+(2026-10-18). Crash/power-loss recovery still requires hardware qualification.
 Its firmware was not recorded, and a newer Piano M-branded unit was not separately tested.
 
 ### Using a Lightpad alongside the Piano
@@ -538,9 +559,9 @@ input/output assigned to the Piano, not the Lightpad. Configure the Lightpad sep
 through Live's normal MIDI routing and the Lightpad's own configuration for your preferred
 bend/modulation workflow. That combined setup is not yet hardware-qualified here.
 
-The repository, installed script (`ROLI_for_Live`) and optional device (`ROLI Controls`)
-retain their existing names for installation compatibility. Those names do not imply
-support for every ROLI controller.
+The optional device is named **ROLI Piano Controls** to reflect its Piano-family scope.
+The repository and installed script (`ROLI_for_Live`) retain their existing names for
+installation compatibility. Those names do not imply support for every ROLI controller.
 
 ## Known limits
 

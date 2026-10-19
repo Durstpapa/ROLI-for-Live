@@ -52,10 +52,9 @@ PLAYING_NOTES_FEEDBACK_VELOCITY = 127
 #   expression: configure native MPE pitch bend / pressure in the active mode
 PROFILES = {
     'RP4': dict(name='ROLI Piano 49', api_mode=True, buttons=True, expression=True),
-    # Experimental, not tested on hardware: lights only. Same protocol and config items as the
-    # Piano per roli_blocks_basics; button ids and expression behaviour are unverified, so
-    # those features stay off.
-    'LKB': dict(name='LUMI Keys (experimental)', api_mode=False, buttons=False, expression=False),
+    # Lighting/restoration confirmed on a joined pair; Dashboard exposes both expression
+    # switches. Native expression control remains experimental; button mappings stay off.
+    'LKB': dict(name='LUMI Keys (experimental)', api_mode=False, buttons=False, expression=True),
 }
 
 PROBE_INTERVAL_TICKS = 20  # update_display runs ~10 Hz

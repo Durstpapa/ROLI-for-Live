@@ -1,10 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { build, outputDir } from "../m4l/build.mjs";
 
 test("generated audio effect embeds JS, passes stereo audio directly, and wires confirmed UI state", async () => {
+    const legacyNames = ["ROLI Controls.amxd", "ROLI Controls.maxpat"];
+    await mkdir(outputDir, { recursive: true });
+    for (const name of legacyNames) {
+        await writeFile(`${outputDir}/${name}`, "legacy generated device");
+    }
     const patch = await build();
+    for (const name of legacyNames) {
+        await assert.rejects(access(`${outputDir}/${name}`), { code: "ENOENT" },
+            "renamed builds must remove stale generated files under the former device name");
+    }
     const p = patch.patcher;
     const boxes = p.boxes.map(({ box }) => box);
     const script = boxes.find(b => b.text === "v8");
@@ -100,7 +109,7 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
         assert.equal(control.mode, 0);
         assert.equal(control.parameter_enable, 0);
         assert.equal(control.active, 0);
-        assert.match(control.annotation, /Unavailable on unverified Piano M\/LUMI/);
+        assert.match(control.annotation, /Piano M\/LUMI support is experimental/);
     }
     assert.match(boxes.find(b => b.varname === "pressure").annotation, /not note velocity/);
     assert.ok(hasEdge(script.id, 8, "roli-connection", 0));
@@ -168,7 +177,7 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
         assert.ok(e[1] < from.numoutlets && e[3] < to.numinlets, "valid inlet/outlet indexes");
     }
 
-    const bytes = await readFile(`${outputDir}/ROLI Controls.amxd`);
+    const bytes = await readFile(`${outputDir}/ROLI Piano Controls.amxd`);
     assert.equal(bytes.toString("ascii", 0, 4), "ampf");
     assert.equal(bytes.toString("ascii", 8, 12), "aaaa", "Live must recognize a Max Audio Effect");
     assert.equal(bytes.toString("ascii", 24, 28), "ptch");
@@ -176,5 +185,5 @@ test("generated audio effect embeds JS, passes stereo audio directly, and wires 
     assert.equal(bytes.toString("ascii", 32, 36), "mx@c");
     const jsonEnd = 32 + bytes.readUInt32BE(44) - 2;
     assert.deepEqual(JSON.parse(bytes.toString("utf8", 48, jsonEnd)), patch);
-    assert.deepEqual(JSON.parse(await readFile(`${outputDir}/ROLI Controls.maxpat`, "utf8")), patch);
+    assert.deepEqual(JSON.parse(await readFile(`${outputDir}/ROLI Piano Controls.maxpat`, "utf8")), patch);
 });

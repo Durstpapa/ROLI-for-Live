@@ -121,14 +121,45 @@ class ExpressionTests(SurfaceTestCase):
             with self.assertRaises(RuntimeError):
                 setter(0)
         fake.SERIAL_REPLY = fake.serial_reply(b'LKB000000000TEST')
-        tick(surface, 60)
-        self.assertTrue(surface.get_roli_controls_state_v8().endswith(' 1 1 0'))
-        for setter in (surface.set_roli_pitch_bend, surface.set_roli_pressure):
-            with self.assertRaises(RuntimeError):
-                setter(0)
-        self.assertFalse(os.path.exists(roli_for_live.SETTINGS_PATH))
-        self.assertEqual([DEVICE[item] for item in (101, 102, 103)], [0, 0, 0])
-        self.assertFalse(any(item in surface._snapshot for item in (101, 102, 103)))
+        disabled_profile = dict(roli_for_live.PROFILES['LKB'], expression=False)
+        with patch.dict(roli_for_live.PROFILES, {'LKB': disabled_profile}):
+            tick(surface, 60)
+            self.assertTrue(surface.get_roli_controls_state_v8().endswith(' 1 1 0'))
+            for setter in (surface.set_roli_pitch_bend, surface.set_roli_pressure):
+                with self.assertRaises(RuntimeError):
+                    setter(0)
+            self.assertFalse(os.path.exists(roli_for_live.SETTINGS_PATH))
+            self.assertEqual([DEVICE[item] for item in (101, 102, 103)], [0, 0, 0])
+            self.assertFalse(any(item in surface._snapshot for item in (101, 102, 103)))
+
+    def test_lumi_expression_controls_follow_each_native_mode_and_restore_without_api_mode(self):
+        fake.SERIAL_REPLY = fake.serial_reply(b'LKB000000000TEST')
+        for mode in range(roli_for_live.NUM_MODES):
+            DEVICE[roli_for_live.MODE] = mode
+            for offset, value in enumerate((3, 0, 1, 0, 0)):
+                DEVICE[roli_for_live.mode_item(mode, offset)] = value
+            surface = self.start()
+            self.assertTrue(surface.get_roli_controls_state_v8().endswith(' 1'))
+            self.assertFalse(surface._profile['buttons'])
+            self.assertFalse(surface._profile['api_mode'])
+            items = surface._expression_mode_items()
+            for pitch, pressure in ((0, 1), (1, 0), (0, 0), (1, 1)):
+                surface.set_roli_pitch_bend(pitch)
+                surface.set_roli_pressure(pressure)
+                tick(surface, 2)
+                self.assertEqual([DEVICE[item] for item in items], [1, pitch, pressure])
+                self.assertTrue(surface.get_roli_controls_state_v8().endswith(
+                    ' %d %d 1' % (pitch, pressure)))
+            surface.set_roli_scale_lighting(0)
+            tick(surface, 2)
+            self.assertEqual([DEVICE[item] for item in items], [1, 1, 1])
+            surface.disconnect()
+            self.surfaces.remove(surface)
+            fake.run_device(surface)
+            self.assertEqual([DEVICE[item] for item in items], [0, 1, 0])
+            self.assertEqual(DEVICE[roli_for_live.MODE], mode)
+        self.assertNotIn(fake.blocks.CMD_BEGIN_API_MODE, fake.COMMANDS)
+        self.assertNotIn(fake.blocks.CMD_END_API_MODE, fake.COMMANDS)
 
     def test_legacy_preferences_default_expression_on_without_rewriting_on_load(self):
         for version in range(1, 6):
