@@ -121,7 +121,7 @@ class SettingsTests(SurfaceTestCase):
         self.assertEqual(ControlSurface.sent, [], 'no writes or API re-entry after shutdown')
         self.assertFalse(any('restored keyboard lighting' in log for log in ControlSurface.logs))
 
-    def test_shutdown_leaves_non_api_lumi_profile_in_native_control(self):
+    def test_shutdown_restores_lumi_then_releases_api_mode(self):
         fake.SERIAL_REPLY = fake.serial_reply(b'LKB000000000TEST')
         surface, instance = self.create()
         tick(surface, 60)
@@ -129,7 +129,7 @@ class SettingsTests(SurfaceTestCase):
         surface.disconnect()
         self.assertEqual(ControlSurface.sent, [
             blocks.config_set(item, value) for item, value in surface._snapshot.items()
-        ])
+        ] + [blocks.device_command(blocks.CMD_END_API_MODE)])
 
     def test_failed_shutdown_restore_send_retains_recovery_snapshot(self):
         surface, instance = self.create()
@@ -243,9 +243,11 @@ class SettingsTests(SurfaceTestCase):
     def test_config_heartbeat_keeps_non_api_keyboard_connected(self):
         fake.SERIAL_REPLY = fake.serial_reply(b'LKB800000000TEST')
         surface, instance = self.create()
-        for _ in range(240):
-            self.now += 0.1
-            tick(surface)
+        non_api = dict(roli_for_live.PROFILES['LKB'], api_mode=False)
+        with patch.dict(roli_for_live.PROFILES, {'LKB': non_api}):
+            for _ in range(240):
+                self.now += 0.1
+                tick(surface)
         self.assertTrue(surface._keyboard_ready())
         self.assertFalse(surface._profile['api_mode'])
         self.assertEqual(fake.COMMANDS, [])

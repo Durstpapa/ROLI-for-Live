@@ -39,7 +39,7 @@ integration.** See the [compatibility matrix](#compatibility).
 | ✨ **Playing notes** | Keys light white as the selected track's clip plays (Session and Arrangement). |
 | ⏮️⏭️ **Track buttons** | The keyboard's `<` / `>` buttons select the previous/next track. |
 | 🎹 **Native MPE** | Performance MIDI goes straight into Live; the script does not filter your notes. Native pitch bend and pressure default to ON and can be switched independently on Piano 49 and the experimental Piano M/LUMI profile. MPE stays enabled. |
-| ↩️ **Native lighting handoff** | Requests restoration of captured lighting settings when Live closes, then releases API mode on Piano 49. Automatic native-lighting return is user-confirmed on Piano 49. |
+| ↩️ **Native lighting handoff** | Requests restoration of captured lighting settings when Live closes, then releases API mode on Piano 49 and Piano M/LUMI. Automatic native-lighting return is user-confirmed on Piano 49 and both joined LUMIs, including the LUMI API-mode path. |
 
 ### What this fork adds
 
@@ -120,6 +120,35 @@ Then do the one-time setup in Live below.
 3. Connect the keyboard and start Live.
 
 ### One-time setup in Live
+
+On Piano 49 and Piano M/LUMI, a short press of the power/mode button cycles these saved
+lighting states (Scale lighting is ON for the first five):
+
+1. **White, root ON**
+2. **White, root OFF**
+3. **Track, root ON**
+4. **Track, root OFF**
+5. **Rainbow** (root choice retained but ignored)
+6. **Scale lighting OFF** (restore native lighting)
+
+The next press returns to White, root ON. Each press advances from the current settings,
+including changes made through the controls device; Scale lighting OFF always advances
+to White, root ON. Each combination is saved atomically. Brightness, clip following,
+playing-note feedback and expression choices are unchanged.
+The button still changes the native
+playing mode; the script reapplies your saved pitch-bend and pressure choices after
+initializing the new mode. Other native mode-dependent settings may still change.
+During transitions the script restores only the inactive mode's settings, retaining
+the original shared lighting values for shutdown, and immediately requests the new
+mode's configuration. This avoids an extra shared-native-lighting restore and reduces
+host-side delay, but cannot guarantee hiding the keyboard's own initial mode-change flash.
+The user confirmed the six-step cycle and satisfactory switching after this refinement
+on Piano 49 (2026-10-18).
+Dashboard mode changes alone do not advance this cycle. LUMI now enters API mode for
+mode-button events, but track-navigation mappings remain disabled. LUMI's new API-mode
+and palette-button behavior, including expression choices and restoration after quitting,
+is user-confirmed on both joined LUMIs (2026-10-18). Some flashing remains during
+switching, but the user reported it is significantly shorter and less jarring.
 
 In **Settings → Tempo & MIDI**:
 1. In an empty **Control Surface** row choose **ROLI for Live**, with Input and Output **ROLI Piano**.
@@ -284,7 +313,8 @@ accepted preferences rather than creating independent expression settings.
 Expression controls require a connected supported keyboard. Piano M/LUMI support is
 experimental: the user confirmed that Dashboard exposes both native expression switches,
 so the `LKB` profile now reads, captures and configures the same per-mode expression
-items as Piano 49. It still does not enter API mode or enable unverified button mappings.
+items as Piano 49. It now enters API mode for palette-button events, but track-navigation
+mappings remain disabled pending hardware testing.
 The saved global expression choices also apply to LUMI; they default to ON if absent.
 Unsupported profiles show **N/A**, and controls remain disabled until initialization completes.
 The script captures the supported keyboard's native MPE, pitch-bend and pressure settings
@@ -439,8 +469,7 @@ Brightness to improve the contrast.
 **Shutdown lighting:** A user reported that script colors could remain after quitting
 Live until switching native hardware modes (2026-10-17). Shutdown now stops lighting
 updates and note feedback before sending the captured lighting settings, then explicitly
-ends BLOCKS API mode on Piano 49. LUMI/Piano M does not enter API mode and receives only
-the restoration writes. No native mode switch is forced and saved lighting preferences
+ends BLOCKS API mode on Piano 49 and LUMI/Piano M. No native mode switch is forced and saved lighting preferences
 are unchanged. Logs describe requests, not verified hardware restoration; rejected
 restore sends retain the recovery snapshot. The user confirmed native lighting returns
 automatically on Piano 49 / Live 12.4.15b7 after quitting with Scale lighting left ON
@@ -448,7 +477,8 @@ automatically on Piano 49 / Live 12.4.15b7 after quitting with Scale lighting le
 setup. The user separately confirmed native lighting restoration on both units of a
 joined two-LUMI pair after quitting Live (2026-10-18). A subsequent test also confirmed
 native expression restoration on both units after normal quit. Crash/power-loss recovery
-is not covered by those confirmations.
+is not covered by those confirmations. The user subsequently confirmed restoration on
+both joined LUMIs with API mode enabled for the six-state button cycle (2026-10-18).
 This change cannot reconstruct native settings already altered;
 restore those in Dashboard with Live closed.
 
@@ -529,7 +559,7 @@ This confirms the baseline, not rollback from a custom program (none was uploade
 | | Status |
 |---|---|
 | ROLI Piano 49, firmware 1.5.0 | ✅ Tested |
-| ROLI Piano M (formerly LUMI Keys) | ✅ Lighting and connection status user-confirmed on LUMI Keys; joined-pair lighting, independent expression switches and normal-quit lighting/expression restoration confirmed on both units (2026-10-18). Profile remains experimental; button mappings remain disabled. Select the script manually. |
+| ROLI Piano M (formerly LUMI Keys) | ✅ Lighting and connection status user-confirmed on LUMI Keys; joined-pair lighting, expression controls, six-state API-mode button switching and normal-quit lighting/expression restoration confirmed (2026-10-18). Switching retains a shorter, less jarring flash; track navigation remains disabled. Select the script manually. |
 | Ableton Live 12.4.6 Suite, Windows 11 | ✅ Original core integration tested; not evidence for the newer fork controls or clip-scale API. |
 | Ableton Live 12.4.15b7, macOS, Piano 49 | ✅ Fork controls, persistence, disconnection detection, empty Arrangement clip-scale transitions and both brightness sliders user-confirmed. |
 | Other Live 12 editions (Intro, Standard) | Core integration expected to work, untested. Optional controls require an edition with Max for Live support. |

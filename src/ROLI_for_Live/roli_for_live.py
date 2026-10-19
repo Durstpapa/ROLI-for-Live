@@ -37,6 +37,7 @@ COLOR_TYPE_RAINBOW = 4  # Rainbow scheme read back after the Dashboard hardware 
 KEY_COLORS = ('white', 'track', 'rainbow')
 SHARED_LIGHTING_ITEMS = (SCALE, KEY, GLOBAL_KEY_COLOUR, ROOT_KEY_COLOUR, BRIGHTNESS)
 
+BUTTON_MODE = 0
 BUTTON_PREVIOUS = 3  # "<"
 BUTTON_NEXT = 4      # ">"
 
@@ -48,13 +49,12 @@ PLAYING_NOTES_FEEDBACK_VELOCITY = 127
 
 # Supported keyboards by serial prefix (roli_BlocksProtocolDefinitions.h). Anything else stays idle.
 #   api_mode:   hold BLOCKS API mode (the keyboard only reports its buttons in API mode)
-#   buttons:    map < / > (button ids verified on hardware) to previous/next track
+#   buttons:    map < / > to previous/next track (mode cycles palettes in API mode)
 #   expression: configure native MPE pitch bend / pressure in the active mode
 PROFILES = {
     'RP4': dict(name='ROLI Piano 49', api_mode=True, buttons=True, expression=True),
-    # Lighting/restoration confirmed on a joined pair; Dashboard exposes both expression
-    # switches. Native expression control remains experimental; button mappings stay off.
-    'LKB': dict(name='LUMI Keys (experimental)', api_mode=False, buttons=False, expression=True),
+    # Joined-pair API mode / palette switching verified; track navigation stays off.
+    'LKB': dict(name='LUMI Keys (experimental)', api_mode=True, buttons=False, expression=True),
 }
 
 PROBE_INTERVAL_TICKS = 20  # update_display runs ~10 Hz
@@ -191,6 +191,7 @@ class ROLIForLive(ControlSurface):
 
     def _keyboard_ready(self):
         return (self._serial is not None and self._snapshot is not None and self._mode is not None
+                and self._expression_checked
                 and self._last_response is not None
                 and time.monotonic() - self._last_response <= DEVICE_RESPONSE_TIMEOUT_SECONDS)
 
@@ -213,6 +214,24 @@ class ROLIForLive(ControlSurface):
     def set_roli_scale_lighting(self, value):
         self._set_setting('scale_lighting', value)
         return self.get_roli_controls_state()
+
+    def _cycle_lighting_state(self):
+        updated = dict(self._settings)
+        if not updated['scale_lighting']:
+            updated.update(key_colors='white', scale_lighting=True, root_color=True)
+        elif updated['key_colors'] == 'rainbow':
+            updated['scale_lighting'] = False
+        elif updated['root_color']:
+            updated['root_color'] = False
+        elif updated['key_colors'] == 'white':
+            updated.update(key_colors='track', root_color=True)
+        else:
+            updated['key_colors'] = 'rainbow'
+        self._save_settings(updated)
+        self._settings = updated
+        self._update_lighting()
+        self.log_message('ROLI for Live: saved lighting cycle: %s, scale lighting %s, root %s' % (
+            updated['key_colors'], updated['scale_lighting'], updated['root_color']))
 
     def set_roli_playing_notes(self, value):
         self._set_setting('playing_notes', value)
@@ -434,8 +453,7 @@ class ROLIForLive(ControlSurface):
                     return
                 self._mode = mode
                 return  # read the active mode's items next
-            if self._snapshot is None:
-                self._take_snapshot()
+            self._take_snapshot()
             if not self._expression_checked:
                 self._ensure_expression()
             self._update_lighting()
@@ -473,11 +491,16 @@ class ROLIForLive(ControlSurface):
                 if item == MODE and self._mode is not None and value != self._mode:
                     self._on_mode_changed(value)
                 self._device_config[item] = value
-            elif event[0] == 'button' and event[2] and self._profile and self._profile['buttons']:
+            elif event[0] == 'button' and event[2] and self._profile:
                 self.log_message('ROLI for Live: button %d pressed' % event[1])
-                if event[1] == BUTTON_PREVIOUS:
+                if event[1] == BUTTON_MODE and self._profile['api_mode']:
+                    try:
+                        self._cycle_lighting_state()
+                    except OSError:
+                        self.log_message('ROLI for Live: mode-button lighting change not applied; settings save failed')
+                elif event[1] == BUTTON_PREVIOUS and self._profile['buttons']:
                     self._select_relative_track(-1)
-                elif event[1] == BUTTON_NEXT:
+                elif event[1] == BUTTON_NEXT and self._profile['buttons']:
                     self._select_relative_track(1)
 
     def _required_items(self):
@@ -495,17 +518,24 @@ class ROLIForLive(ControlSurface):
         return [mode_item(self._mode, o) for o in (_MIDI_MODE, _PITCH_ENABLE, _PRESSURE_ENABLE)]
 
     def _on_mode_changed(self, mode):
-        """The user switched the keyboard's mode: give the old mode its settings back, start over."""
+        """Restore the inactive mode without flashing shared native lighting."""
         self.log_message('ROLI for Live: keyboard mode changed %r -> %r' % (self._mode, mode))
-        self._restore_snapshot()
+        self._restore_snapshot(mode_only=True)
         for item in self._lighting_mode_items() + self._expression_mode_items():
             self._device_config.pop(item, None)
-        self._snapshot = None
         self._sent = {}
         self._pending = {}
-        self._mode = None
+        self._mode = mode if 0 <= mode < NUM_MODES else None
         self._expression_checked = False
         self._last_probe = -PROBE_INTERVAL_TICKS
+        self._last_write = self._ticks - MIN_WRITE_INTERVAL_TICKS
+        if self._mode is not None:
+            for item in self._lighting_mode_items() + self._expression_mode_items():
+                self._device_config.pop(item, None)
+            for item in self._required_items():
+                if item not in self._device_config:
+                    self._send_midi(blocks.config_request(item))
+            self._last_probe = self._ticks
 
     def _keep_api_mode(self):
         if self._last_ack is None or self._ticks - self._last_ack > API_MODE_TIMEOUT_TICKS:
@@ -538,18 +568,24 @@ class ROLIForLive(ControlSurface):
 
     def _take_snapshot(self):
         snap = None
+        shared = dict((i, self._snapshot[i]) for i in SHARED_LIGHTING_ITEMS
+                      if self._snapshot is not None and i in self._snapshot)
         changed = False
         try:
             if os.path.exists(SNAPSHOT_PATH):
                 with open(SNAPSHOT_PATH) as f:
                     stored = json.load(f)
-                if stored.get('serial') == self._serial and stored.get('mode', 0) == self._mode:
-                    snap = dict((int(k), v) for k, v in stored['items'].items())
+                if stored.get('serial') == self._serial:
+                    items = dict((int(k), v) for k, v in stored['items'].items())
+                    shared = dict((i, items[i]) for i in SHARED_LIGHTING_ITEMS if i in items)
+                    if stored.get('mode', 0) == self._mode:
+                        snap = items
         except Exception as e:
             self.log_message('ROLI for Live: could not read snapshot: %s' % e)
         if snap is None:
             snap = dict((i, self._device_config[i])
                         for i in list(SHARED_LIGHTING_ITEMS) + self._lighting_mode_items())
+            snap.update(shared)
             changed = True
         elif BRIGHTNESS not in snap:
             snap[BRIGHTNESS] = self._device_config[BRIGHTNESS]
@@ -568,16 +604,21 @@ class ROLIForLive(ControlSurface):
         self._snapshot = snap
         self.log_message('ROLI for Live: lighting snapshot %r' % (snap,))
 
-    def _restore_snapshot(self):
+    def _restore_snapshot(self, mode_only=False):
         if not self._snapshot or self._serial is None:
             return
         sent = True
         for item, value in self._snapshot.items():
+            if mode_only and item in SHARED_LIGHTING_ITEMS:
+                continue
             if not self._send_midi(blocks.config_set(item, value)):
                 sent = False
                 self.log_message('ROLI for Live: could not send lighting restore item %d' % item)
         if not sent:
             self.show_message('ROLI for Live: lighting restore send failed; recovery snapshot retained')
+            return
+        if mode_only:
+            self.log_message('ROLI for Live: sent inactive-mode restore request (shared lighting retained)')
             return
         try:
             os.remove(SNAPSHOT_PATH)
@@ -641,7 +682,8 @@ class ROLIForLive(ControlSurface):
         return state
 
     def _update_lighting(self):
-        if self._disconnecting or self._serial is None or self._snapshot is None or self._mode is None:
+        if (self._disconnecting or self._serial is None or self._snapshot is None
+                or self._mode is None or not self._expression_checked):
             return
         if self._settings['global_brightness'] is not None:
             self._write(BRIGHTNESS, self._settings['global_brightness'])

@@ -2,6 +2,21 @@
 
 ## Unreleased (fork)
 
+- Reduce script-added mode-switch flashing: restore only inactive-mode configuration
+  during transitions, retain original shared lighting for shutdown/recovery, and request
+  the new mode's configuration immediately. Apply the selected lighting/expression state
+  on the first display tick after configuration arrives. The native firmware's initial
+  mode-change flash may remain. The user confirmed satisfactory switching with the
+  six-state cycle on Piano 49 and both joined LUMIs (2026-10-18). Some flashing remains
+  on LUMI, but the user reports it is significantly shorter and less jarring.
+- Map Piano 49 and Piano M/LUMI's direct mode-button press to an atomic six-state cycle:
+  White/root ON, White/root OFF, Track/root ON, Track/root OFF, Rainbow, native lighting
+  (Scale lighting OFF). Retain native mode switching and reapply saved expression choices
+  through the existing mode-change initialization. Enable API mode on LUMI for button
+  events and release it after restoration on shutdown; keep LUMI track navigation off.
+  The user confirmed the cycle, expression behavior and normal-quit restoration on both
+  joined LUMIs (2026-10-18). Cover persistence, release events, mode transitions,
+  failed saves, lighting OFF and shutdown in simulated-host tests.
 - Rename the optional Audio Effect to **ROLI Piano Controls**, including generated
   device/patch filenames, Max console messages and current user-facing documentation.
   Remove obsolete generated filenames after a successful build. Keep the Remote Script,

@@ -250,7 +250,7 @@ def config_packet(item, value):
 
 
 def test_lumi():
-    """Experimental LUMI lighting/expression in the active mode, without API buttons."""
+    """Experimental LUMI lighting/expression with API mode, without track navigation."""
     global SERIAL_REPLY
     SERIAL_REPLY = serial_reply(b'LKB000000000TEST')
     DEVICE.clear()
@@ -268,7 +268,7 @@ def test_lumi():
     s = ROLI_for_Live.create_instance(object())
     tick(s, 60)
     assert any('LUMI Keys (experimental)' in l for l in ControlSurface.logs)
-    assert COMMANDS == [], 'no API mode / ping for LUMI: %r' % COMMANDS
+    assert blocks.CMD_BEGIN_API_MODE in COMMANDS and blocks.CMD_PING in COMMANDS, COMMANDS
     assert DEVICE[107] == 1 and DEVICE[111] == 1, 'mode 1 colour type / show scale'
     assert DEVICE[100] == 0 and DEVICE[104] == 0, 'mode 0 untouched'
     assert all(DEVICE[i] == 1 for i in (108, 109, 110)), 'native MPE / bend / pressure default on'
